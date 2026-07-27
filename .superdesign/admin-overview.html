@@ -1,0 +1,403 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --paper: #F7F7F3;
+            --surface: #FFFFFF;
+            --forest-950: #10291E;
+            --forest-800: #1A3C2B;
+            --forest-100: #DDE9E1;
+            --ink-900: #202421;
+            --ink-600: #626A64;
+            --ink-400: #909790;
+            --line: rgba(32, 36, 33, 0.14);
+            --line-strong: rgba(32, 36, 33, 0.26);
+            --success: #2F7A4C;
+            --success-light: #E6F3EA;
+            --warning: #C2613B;
+            --warning-light: #FCEBE3;
+            --danger: #B6413C;
+            --danger-light: #FBE7E5;
+            --info: #326A8C;
+            --info-light: #E6F0F6;
+        }
+
+        body {
+            font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background-color: var(--paper);
+            color: var(--ink-900);
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .mono {
+            font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+            letter-spacing: 0.04em;
+        }
+
+        .sidebar-item-active {
+            background-color: var(--forest-100);
+            color: var(--forest-950);
+            border-left: 2px solid var(--forest-800);
+        }
+
+        .thin-border {
+            border: 1px solid var(--line);
+        }
+
+        .card-shadow {
+            box-shadow: 0 8px 24px rgba(16, 41, 30, 0.04);
+        }
+
+        .step-line {
+            position: relative;
+        }
+        .step-line::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 100%;
+            width: 2rem;
+            height: 1px;
+            background: var(--line);
+            z-index: 0;
+        }
+        .step-line:last-child::after {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex min-h-screen" data-sd-id="1">
+        <!-- Sidebar: 232px -->
+        <aside class="w-[232px] bg-white border-r border-[rgba(32,36,33,0.14)] flex flex-col fixed h-full z-40" data-sd-id="2">
+            <div class="p-6 mb-4" data-sd-id="3">
+                <div class="flex items-center gap-2" data-sd-id="4">
+                    <div class="w-8 h-8 bg-[#1A3C2B] flex items-center justify-center rounded-sm" data-sd-id="5">
+                        <iconify-icon icon="lucide:database" class="text-white text-lg"></iconify-icon>
+                    </div>
+                    <span class="font-bold text-[18px] tracking-tight text-[#10291E]" data-sd-id="6">GroundedDesk</span>
+                </div>
+            </div>
+
+            <nav class="flex-1 px-3 space-y-1" data-sd-id="7">
+                <a id="nav-overview" href="#" class="sidebar-item-active flex items-center gap-3 px-3 py-2 text-[13px] font-medium transition-colors" data-sd-id="8">
+                    <iconify-icon icon="lucide:layout-dashboard" class="text-[18px]"></iconify-icon>
+                    <span data-sd-id="9">概览</span>
+                </a>
+                <a id="nav-sources" href="#" class="flex items-center gap-3 px-3 py-2 text-[13px] font-medium text-ink-600 hover:bg-gray-50 transition-colors" data-sd-id="10">
+                    <iconify-icon icon="lucide:files" class="text-[18px]"></iconify-icon>
+                    <span data-sd-id="11">知识来源</span>
+                </a>
+                <a id="nav-assistant" href="#" class="flex items-center gap-3 px-3 py-2 text-[13px] font-medium text-ink-600 hover:bg-gray-50 transition-colors" data-sd-id="12">
+                    <iconify-icon icon="lucide:bot-message-square" class="text-[18px]"></iconify-icon>
+                    <span data-sd-id="13">助手</span>
+                </a>
+                <a id="nav-sessions" href="#" class="flex items-center gap-3 px-3 py-2 text-[13px] font-medium text-ink- ink-600 hover:bg-gray-50 transition-colors" data-sd-id="14">
+                    <iconify-icon icon="lucide:messages-square" class="text-[18px]"></iconify-icon>
+                    <span data-sd-id="15">会话</span>
+                </a>
+                <a id="nav-questions" href="#" class="flex items-center gap-3 px-3 py-2 text-[13px] font-medium text-ink-600 hover:bg-gray-50 transition-colors" data-sd-id="16">
+                    <iconify-icon icon="lucide:alert-circle" class="text-[18px]"></iconify-icon>
+                    <span data-sd-id="17">待解决问题</span>
+                </a>
+            </nav>
+
+            <div class="p-4 border-t border-[rgba(32,36,33,0.14)]" data-sd-id="18">
+                <div class="flex items-center gap-3 mb-4" data-sd-id="19">
+                    <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-[12px] font-bold text-ink-600" data-sd-id="20">研</div>
+                    <div class="overflow-hidden" data-sd-id="21">
+                        <p class="text-[13px] font-semibold truncate" data-sd-id="22">演示组织</p>
+                        <p class="text-[11px] text-ink-400 truncate" data-sd-id="23">管理员</p>
+                    </div>
+                </div>
+                <a id="nav-logout" href="#" class="flex items-center gap-2 text-[12px] text-ink-600 hover:text-danger" data-sd-id="24">
+                    <iconify-icon icon="lucide:log-out"></iconify-icon>
+                    <span data-sd-id="25">安全退出</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="ml-[232px] flex-1 min-w-0" data-sd-id="26">
+            <!-- Top Bar -->
+            <header class="h-20 bg-white border-b border-[rgba(32,36,33,0.14)] px-8 flex items-center justify-between sticky top-0 z-30" data-sd-id="27">
+                <div data-sd-id="28">
+                    <h1 class="text-[28px] font-bold tracking-tight text-[#10291E]" data-sd-id="29">概览</h1>
+                    <p class="text-[14px] text-ink-600" data-sd-id="30">管理从知识到回答再到改进的闭环状态</p>
+                </div>
+                <div class="flex items-center gap-3" data-sd-id="31">
+                    <button id="btn-preview-assistant" class="px-4 py-2 bg-white border border-[rgba(32,36,33,0.26)] text-ink-900 rounded-[8px] text-[14px] font-medium hover:bg-gray-50 transition-colors" data-sd-id="32">预览助手</button>
+                    <button id="btn-add-source" class="px-4 py-2 bg-[#1A3C2B] text-white rounded-[8px] text-[14px] font-medium hover:brightness-95 transition-all flex items-center gap-2" data-sd-id="33">
+                        <iconify-icon icon="lucide:plus"></iconify-icon>
+                        添加知识来源
+                    </button>
+                </div>
+            </header>
+
+            <div class="p-8 max-w-[1200px] mx-auto space-y-7" data-sd-id="34">
+                <!-- Metric Cards Grid -->
+                <div class="grid grid-cols-4 gap-4" data-sd-id="35">
+                    <div class="bg-white p-5 rounded-[12px] thin-border flex flex-col justify-between" data-sd-id="36">
+                        <div class="flex items-center justify-between" data-sd-id="37">
+                            <span class="text-[13px] font-medium text-ink-600" data-sd-id="38">助手状态</span>
+                            <div class="flex items-center gap-1.5" data-sd-id="39">
+                                <div class="w-1.5 h-1.5 rounded-full bg-[#2F7A4C]" data-sd-id="40"></div>
+                                <span class="text-[11px] mono uppercase font-semibold text-[#2F7A4C]" data-sd-id="41">已发布</span>
+                            </div>
+                        </div>
+                        <div class="mt-4" data-sd-id="42">
+                            <div class="text-[30px] font-semibold mono" data-sd-id="43">Online</div>
+                            <p class="text-[11px] text-ink-400 mt-1" data-sd-id="44">访客现已可以进行咨询</p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-5 rounded-[12px] thin-border flex flex-col justify-between" data-sd-id="45">
+                        <span class="text-[13px] font-medium text-ink-600" data-sd-id="46">可用知识来源</span>
+                        <div class="mt-4" data-sd-id="47">
+                            <div class="text-[30px] font-semibold mono" data-sd-id="48">06</div>
+                            <p class="text-[11px] text-ink-400 mt-1" data-sd-id="49">包含网页抓取与手工录入</p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-5 rounded-[12px] thin-border flex flex-col justify-between" data-sd-id="50">
+                        <span class="text-[13px] font-medium text-ink-600" data-sd-id="51">最近 30 天会话</span>
+                        <div class="mt-4" data-sd-id="52">
+                            <div class="text-[30px] font-semibold mono" data-sd-id="53">18</div>
+                            <p class="text-[11px] text-ink-400 mt-1" data-sd-id="54">平均每会话提问 3.2 次</p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-5 rounded-[12px] thin-border flex flex-col justify-between" data-sd-id="55">
+                        <div class="flex items-center justify-between" data-sd-id="56">
+                            <span class="text-[13px] font-medium text-ink-600" data-sd-id="57">待处理问题</span>
+                            <div class="px-2 py-0.5 bg-orange-50 rounded-full border border-orange-200" data-sd-id="58">
+                                <span class="text-[11px] mono font-semibold text-orange-700" data-sd-id="59">待办</span>
+                            </div>
+                        </div>
+                        <div class="mt-4" data-sd-id="60">
+                            <div class="text-[30px] font-semibold mono text-orange-700" data-sd-id="61">03</div>
+                            <p class="text-[11px] text-ink-400 mt-1" data-sd-id="62">来自拒答或负面质量反馈</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 2: Closed Loop & Preview -->
+                <div class="grid grid-cols-12 gap-7" data-sd-id="63">
+                    <!-- Service Loop Status -->
+                    <div class="col-span-8 bg-white rounded-[12px] thin-border p-6" data-sd-id="64">
+                        <div class="flex items-center justify-between mb-8" data-sd-id="65">
+                            <h2 class="text-[18px] font-semibold" data-sd-id="66">服务状态与闭环</h2>
+                            <div class="flex items-center gap-4 text-[12px] text-ink-400" data-sd-id="67">
+                                <div class="flex items-center gap-1.5" data-sd-id="68">
+                                    <iconify-icon icon="lucide:clock" class="text-ink-400"></iconify-icon>
+                                    <span data-sd-id="69">消息预算: <span class="mono text-ink-600" data-sd-id="70">128/500 (今日)</span></span>
+                                </div>
+                                <div class="flex items-center gap-1.5" data-sd-id="71">
+                                    <iconify-icon icon="lucide:check-circle" class="text-success"></iconify-icon>
+                                    <span data-sd-id="72">核心链路正常</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-start" data-sd-id="73">
+                            <div class="flex flex-col items-center gap-3 w-20 text-center group" data-sd-id="74">
+                                <div class="w-12 h-12 rounded-full border border-forest-800 flex items-center justify-center bg-forest-100 text-forest-800" data-sd-id="75">
+                                    <iconify-icon icon="lucide:database" class="text-xl"></iconify-icon>
+                                </div>
+                                <span class="text-[12px] font-medium" data-sd-id="76">知识来源</span>
+                                <span class="text-[10px] text-ink-400 mono leading-tight" data-sd-id="77">6 已启用</span>
+                            </div>
+                            <div class="mt-6 flex-1 h-px bg-line mx-2" data-sd-id="78"></div>
+                            <div class="flex flex-col items-center gap-3 w-20 text-center" data-sd-id="79">
+                                <div class="w-12 h-12 rounded-full border border-forest-800 flex items-center justify-center bg-forest-100 text-forest-800" data-sd-id="80">
+                                    <iconify-icon icon="lucide:search" class="text-xl"></iconify-icon>
+                                </div>
+                                <span class="text-[12px] font-medium" data-sd-id="81">检索准备</span>
+                                <span class="text-[10px] text-ink-400 mono leading-tight" data-sd-id="82">98% 覆盖率</span>
+                            </div>
+                            <div class="mt-6 flex-1 h-px bg-line mx-2" data-sd-id="83"></div>
+                            <div class="flex flex-col items-center gap-3 w-20 text-center" data-sd-id="84">
+                                <div class="w-12 h-12 rounded-full border border-forest-800 flex items-center justify-center bg-forest-100 text-forest-800" data-sd-id="85">
+                                    <iconify-icon icon="lucide:message-circle-code" class="text-xl"></iconify-icon>
+                                </div>
+                                <span class="text-[12px] font-medium" data-sd-id="86">有据回答</span>
+                                <span class="text-[10px] text-ink-400 mono leading-tight" data-sd-id="87">DeepSeek-V4</span>
+                            </div>
+                            <div class="mt-6 flex-1 h-px bg-line mx-2" data-sd-id="88"></div>
+                            <div class="flex flex-col items-center gap-3 w-20 text-center" data-sd-id="89">
+                                <div class="w-12 h-12 rounded-full border border-orange-700 flex items-center justify-center bg-orange-50 text-orange-700" data-sd-id="90">
+                                    <iconify-icon icon="lucide:thumbs-down" class="text-xl"></iconify-icon>
+                                </div>
+                                <span class="text-[12px] font-medium" data-sd-id="91">反馈/拒答</span>
+                                <span class="text-[10px] text-orange-700 mono leading-tight" data-sd-id="92">3 待处理</span>
+                            </div>
+                            <div class="mt-6 flex-1 h-px bg-line mx-2" data-sd-id="93"></div>
+                            <div class="flex flex-col items-center gap-3 w-20 text-center" data-sd-id="94">
+                                <div class="w-12 h-12 rounded-full border border-line-strong flex items-center justify-center bg-white text-ink-400" data-sd-id="95">
+                                    <iconify-icon icon="lucide:refresh-cw" class="text-xl"></iconify-icon>
+                                </div>
+                                <span class="text-[12px] font-medium" data-sd-id="96">更新知识</span>
+                                <span class="text-[10px] text-ink-400 mono leading-tight" data-sd-id="97">持续迭代</span>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-8 p-4 bg-gray-50 rounded-[8px] flex items-center justify-between border border-line" data-sd-id="98">
+                           <div class="flex items-center gap-3" data-sd-id="99">
+                                <div class="w-2 h-2 rounded-full bg-success" data-sd-id="100"></div>
+                                <span class="text-[13px] text-ink-600" data-sd-id="101">最近知识处理：<span class="font-medium" data-sd-id="102">《2024年售后服务标准.html》</span></span>
+                           </div>
+                           <span class="text-[11px] mono text-ink-400" data-sd-id="103">10 分钟前已就绪</span>
+                        </div>
+                    </div>
+
+                    <!-- Preview Section -->
+                    <div class="col-span-4 bg-white rounded-[12px] thin-border flex flex-col" data-sd-id="104">
+                        <div class="p-4 border-b border-line flex items-center justify-between" data-sd-id="105">
+                            <div class="flex items-center gap-2" data-sd-id="106">
+                                <div class="w-6 h-6 rounded-full bg-forest-100 flex items-center justify-center" data-sd-id="107">
+                                    <iconify-icon icon="lucide:bot" class="text-forest-800 text-sm"></iconify-icon>
+                                </div>
+                                <span class="text-[14px] font-medium" data-sd-id="108">助手预览</span>
+                            </div>
+                            <span class="text-[11px] px-2 py-0.5 bg-success-light text-success font-semibold rounded-full uppercase mono" data-sd-id="109">Demo</span>
+                        </div>
+                        <div class="flex-1 p-5 overflow-y-auto space-y-4 text-[13px]" data-sd-id="110">
+                            <div class="bg-gray-50 p-3 rounded-[8px] text-ink-600" data-sd-id="111">
+                                你好！我是演示组织的 AI 客服。我可以回答关于服务流程、报价和售后标准的问题。
+                            </div>
+                            <div class="space-y-3" data-sd-id="112">
+                                <div class="p-3 bg-white thin-border rounded-[8px] border-l-4 border-l-success" data-sd-id="113">
+                                    <p class="mb-3" data-sd-id="114">根据现有知识，我们的售后响应时间为 2 小时内，且提供 7×24 小时的紧急技术支持服务。</p>
+                                    <div class="space-y-2 pt-2 border-t border-line" data-sd-id="115">
+                                        <p class="text-[11px] text-ink-400 font-medium" data-sd-id="116">回答依据：</p>
+                                        <div class="flex flex-col gap-2" data-sd-id="117">
+                                            <div class="flex items-center justify-between p-2 bg-gray-50 rounded-[4px] border border-line group cursor-pointer hover:border-forest-800" data-sd-id="118">
+                                                <span class="truncate text-[12px]" data-sd-id="119">2024年售后服务标准</span>
+                                                <iconify-icon icon="lucide:external-link" class="text-[12px] text-ink-400"></iconify-icon>
+                                            </div>
+                                            <div class="flex items-center justify-between p-2 bg-gray-50 rounded-[4px] border border-line group cursor-pointer hover:border-forest-800" data-sd-id="120">
+                                                <span class="truncate text-[12px]" data-sd-id="121">技术支持响应级别定义</span>
+                                                <iconify-icon icon="lucide:external-link" class="text-[12px] text-ink-400"></iconify-icon>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-4 border-t border-line" data-sd-id="122">
+                            <div class="w-full p-2 bg-gray-50 border border-line rounded-[8px] flex items-center justify-between" data-sd-id="123">
+                                <span class="text-ink-400" data-sd-id="124">输入提问预览...</span>
+                                <iconify-icon icon="lucide:send" class="text-ink-400"></iconify-icon>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 3: Sessions & Unresolved Questions -->
+                <div class="grid grid-cols-12 gap-7" data-sd-id="125">
+                    <!-- Sessions -->
+                    <div class="col-span-7 bg-white rounded-[12px] thin-border" data-sd-id="126">
+                        <div class="p-5 border-b border-line flex items-center justify-between" data-sd-id="127">
+                            <h2 class="text-[18px] font-semibold" data-sd-id="128">最近会话</h2>
+                            <a id="btn-view-all-sessions" href="#" class="text-[13px] text-forest-800 font-medium hover:underline" data-sd-id="129">查看全部</a>
+                        </div>
+                        <div class="overflow-hidden" data-sd-id="130">
+                            <table class="w-full" data-sd-id="131">
+                                <thead class="bg-gray-50 border-b border-line text-left" data-sd-id="132">
+                                    <tr data-sd-id="133">
+                                        <th class="px-5 py-3 text-[11px] font-semibold text-ink-400 uppercase mono" data-sd-id="134">访客提问摘要</th>
+                                        <th class="px-5 py-3 text-[11px] font-semibold text-ink-400 uppercase mono" data-sd-id="135">结果类型</th>
+                                        <th class="px-5 py-3 text-[11px] font-semibold text-ink-400 uppercase mono" data-sd-id="136">最后活动</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-line" data-sd-id="137">
+                                    <tr class="hover:bg-gray-50 cursor-pointer transition-colors" data-sd-id="138">
+                                        <td class="px-5 py-4" data-sd-id="139">
+                                            <span class="text-[13px] font-medium block truncate w-64" data-sd-id="140">如何申请 API 密钥？</span>
+                                        </td>
+                                        <td class="px-5 py-4" data-sd-id="141">
+                                            <div class="flex items-center gap-1.5" data-sd-id="142">
+                                                <div class="w-1.5 h-1.5 rounded-full bg-success" data-sd-id="143"></div>
+                                                <span class="text-[12px] text-ink-600" data-sd-id="144">有据回答</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-5 py-4 text-[12px] text-ink-400 mono" data-sd-id="145">刚刚</td>
+                                    </tr>
+                                    <tr class="hover:bg-gray-50 cursor-pointer transition-colors" data-sd-id="146">
+                                        <td class="px-5 py-4" data-sd-id="147">
+                                            <span class="text-[13px] font-medium block truncate w-64" data-sd-id="148">你们在上海有办公室吗？</span>
+                                        </td>
+                                        <td class="px-5 py-4" data-sd-id="149">
+                                            <div class="flex items-center gap-1.5" data-sd-id="150">
+                                                <div class="w-1.5 h-1.5 rounded-full bg-warning" data-sd-id="151"></div>
+                                                <span class="text-[12px] text-ink-600" data-sd-id="152">可靠拒答</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-5 py-4 text-[12px] text-ink-400 mono" data-sd-id="153">12:45</td>
+                                    </tr>
+                                    <tr class="hover:bg-gray-50 cursor-pointer transition-colors" data-sd-id="154">
+                                        <td class="px-5 py-4" data-sd-id="155">
+                                            <span class="text-[13px] font-medium block truncate w-64" data-sd-id="156">帮我写一段 Python 代码</span>
+                                        </td>
+                                        <td class="px-5 py-4" data-sd-id="157">
+                                            <div class="flex items-center gap-1.5" data-sd-id="158">
+                                                <div class="w-1.5 h-1.5 rounded-full bg-danger" data-sd-id="159"></div>
+                                                <span class="text-[12px] text-ink-600" data-sd-id="160">技术故障</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-5 py-4 text-[12px] text-ink-400 mono" data-sd-id="161">昨天</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Unresolved Questions -->
+                    <div class="col-span-5 bg-white rounded-[12px] thin-border flex flex-col" data-sd-id="162">
+                        <div class="p-5 border-b border-line flex items-center justify-between" data-sd-id="163">
+                            <h2 class="text-[18px] font-semibold" data-sd-id="164">待解决问题</h2>
+                            <span class="text-[11px] mono bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full font-bold" data-sd-id="165">3 NEW</span>
+                        </div>
+                        <div class="p-5 space-y-4" data-sd-id="166">
+                            <!-- Item 1 -->
+                            <div class="p-4 rounded-[8px] thin-border border-l-4 border-l-warning-light bg-white hover:border-line-strong transition-all" data-sd-id="167">
+                                <div class="flex items-start justify-between mb-2" data-sd-id="168">
+                                    <span class="text-[11px] text-orange-700 font-semibold px-2 py-0.5 bg-orange-50 rounded-sm" data-sd-id="169">可靠拒答</span>
+                                    <button id="btn-context-1" class="text-[12px] text-forest-800 font-medium" data-sd-id="170">查看上下文</button>
+                                </div>
+                                <p class="text-[13px] font-medium text-ink-900 leading-relaxed" data-sd-id="171">“你们在上海有办公室吗？”</p>
+                                <p class="text-[11px] text-ink-400 mt-2" data-sd-id="172">触发原因：现有知识暂未包含地理办公位置信息。</p>
+                            </div>
+                            <!-- Item 2 -->
+                            <div class="p-4 rounded-[8px] thin-border border-l-4 border-l-danger-light bg-white hover:border-line-strong transition-all" data-sd-id="173">
+                                <div class="flex items-start justify-between mb-2" data-sd-id="174">
+                                    <span class="text-[11px] text-danger font-semibold px-2 py-0.5 bg-danger-light rounded-sm" data-sd-id="175">没帮助反馈</span>
+                                    <button id="btn-context-2" class="text-[12px] text-forest-800 font-medium" data-sd-id="176">查看上下文</button>
+                                </div>
+                                <p class="text-[13px] font-medium text-ink-900 leading-relaxed" data-sd-id="177">“如何重置我的 API Key？”</p>
+                                <p class="text-[11px] text-ink-400 mt-2" data-sd-id="178">反馈者评价：按照步骤操作没有找到对应按钮。</p>
+                            </div>
+                            <!-- Item 3 -->
+                            <div class="p-4 rounded-[8px] thin-border border-l-4 border-l-warning-light bg-white hover:border-line-strong transition-all" data-sd-id="179">
+                                <div class="flex items-start justify-between mb-2" data-sd-id="180">
+                                    <span class="text-[11px] text-orange-700 font-semibold px-2 py-0.5 bg-orange-50 rounded-sm" data-sd-id="181">可靠拒答</span>
+                                    <button id="btn-context-3" class="text-[12px] text-forest-800 font-medium" data-sd-id="182">查看上下文</button>
+                                </div>
+                                <p class="text-[13px] font-medium text-ink-900 leading-relaxed" data-sd-id="183">“支持跨境汇款吗？”</p>
+                                <p class="text-[11px] text-ink-400 mt-2" data-sd-id="184">触发原因：缺少支付方式相关的详细政策文档。</p>
+                            </div>
+                        </div>
+                        <div class="mt-auto p-4 border-t border-line text-center" data-sd-id="185">
+                            <a id="btn-all-questions" href="#" class="text-[13px] text-ink-600 hover:text-ink-900 transition-colors" data-sd-id="186">管理全部改进任务</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+</body></html>
