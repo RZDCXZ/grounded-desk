@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+  <body style="font-family: sans-serif; color: #202421">
+    <h2>登录 GroundedDesk</h2>
+    <p>点击下面的链接进入本地管理员后台。此链接只能使用一次。</p>
+    <p>
+      <a
+        href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email"
+        style="color: #1a3c2b"
+      >
+        进入管理员后台
+      </a>
+    </p>
+  </body>
+</html>

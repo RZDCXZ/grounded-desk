@@ -1,0 +1,42 @@
+{
+  "name": "grounded-desk",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.13.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "start": "next start",
+    "build": "next build",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "supabase:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "test:db": "supabase test db",
+    "test:e2e": "playwright test",
+    "test": "pnpm typecheck && pnpm lint && pnpm db:reset && pnpm test:db && pnpm test:e2e"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.12.3",
+    "@supabase/supabase-js": "2.110.8",
+    "lucide-react": "1.27.0",
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "0.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.12",
+    "supabase": "2.109.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3"
+  }
+}

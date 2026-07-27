@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #f7f7f3;
+  --surface: #ffffff;
+  --forest-950: #10291e;
+  --forest-800: #1a3c2b;
+  --forest-100: #dde9e1;
+  --ink-900: #202421;
+  --ink-600: #626a64;
+  --ink-400: #909790;
+  --line: rgba(32, 36, 33, 0.14);
+  --line-strong: rgba(32, 36, 33, 0.26);
+  --success: #2f7a4c;
+  --success-light: #e6f3ea;
+  --warning: #c2613b;
+  --warning-light: #fcebe3;
+  --danger: #b6413c;
+  --danger-light: #fbe7e5;
+  --info: #326a8c;
+  --info-light: #e6f0f6;
+}
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  color: var(--ink-900);
+  background: var(--paper);
+  font-family:
+    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5715;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--forest-800);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .page-enter {
+    animation: page-enter 180ms ease-out both;
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
