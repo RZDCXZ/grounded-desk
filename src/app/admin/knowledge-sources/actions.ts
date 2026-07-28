@@ -63,6 +63,7 @@ export async function createManualKnowledgeSource(
 
   revalidateKnowledgeSourcePaths();
   after(async () => {
+    await delayKnowledgeProcessingForEndToEndTest();
     await processManualKnowledgeSourceForOrganization(
       supabase,
       organization.id,
@@ -72,6 +73,17 @@ export async function createManualKnowledgeSource(
   });
 
   return { status: "created", sourceId };
+}
+
+async function delayKnowledgeProcessingForEndToEndTest() {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
+  const delay = Number(process.env.E2E_KNOWLEDGE_PROCESSING_DELAY_MS ?? 0);
+  if (Number.isFinite(delay) && delay > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
 }
 
 async function processManualKnowledgeSourceForOrganization(

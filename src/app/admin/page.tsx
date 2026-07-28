@@ -8,14 +8,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import {
+  getStatusLabel,
+  StatusBadge,
+  type Status,
+} from "@/components/admin/status-badge";
+import { Button } from "@/components/ui/button";
 import { requireAdministrator } from "@/lib/auth/require-admin";
 import { getThirtyDaysAgo } from "@/lib/time";
-
-const statusLabels = {
-  draft: "草稿",
-  published: "已发布",
-  offline: "已下线",
-} as const;
 
 export default async function AdminOverviewPage() {
   const { supabase, organization } = await requireAdministrator();
@@ -47,41 +48,36 @@ export default async function AdminOverviewPage() {
     ]);
 
   const assistant = assistantResult.data;
-  const assistantStatus = assistant?.status ?? "draft";
-  const assistantStatusLabel =
-    statusLabels[assistantStatus as keyof typeof statusLabels];
+  const assistantStatus = (assistant?.status ?? "draft") as Extract<
+    Status,
+    "draft" | "published" | "offline"
+  >;
+  const assistantStatusLabel = getStatusLabel(assistantStatus);
   const availableSources = sourcesResult.count ?? 0;
   const recentConversations = conversationsResult.count ?? 0;
   const pendingQuestions = unresolvedResult.count ?? 0;
 
   return (
     <main className="page-enter min-h-screen">
-      <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between border-b border-(--line) bg-white px-5 py-4 sm:px-8">
-        <div>
-          <h1 className="text-[28px] font-bold leading-9 tracking-[-0.02em] text-(--forest-950)">
-            概览
-          </h1>
-          <p className="text-sm text-(--ink-600)">
-            管理从知识到回答再到改进的闭环状态
-          </p>
-        </div>
-        <div className="hidden items-center gap-3 sm:flex">
-          <button
-            className="h-10 rounded-lg border border-(--line-strong) bg-white px-4 text-sm font-medium text-(--ink-400)"
-            disabled
-            title="助手预览将在后续工单开放"
-            type="button"
-          >
-            预览助手
-          </button>
-          <Link
-            className="inline-flex h-10 items-center rounded-lg bg-(--forest-800) px-4 text-sm font-medium text-white"
-            href="/admin/knowledge-sources"
-          >
-            添加知识来源
-          </Link>
-        </div>
-      </header>
+      <AdminPageHeader
+        actions={
+          <div className="hidden items-center gap-3 sm:flex">
+            <Button
+              disabled
+              title="助手预览将在后续工单开放"
+              type="button"
+              variant="secondary"
+            >
+              预览助手
+            </Button>
+            <Button asChild>
+              <Link href="/admin/knowledge-sources">添加知识来源</Link>
+            </Button>
+          </div>
+        }
+        description="管理从知识到回答再到改进的闭环状态"
+        title="概览"
+      />
 
       <div className="mx-auto max-w-300 space-y-7 p-5 sm:p-8">
         <section
@@ -91,7 +87,7 @@ export default async function AdminOverviewPage() {
           <MetricCard
             description="发布后访客才能开始咨询"
             label="助手状态"
-            status={assistantStatusLabel}
+            status={assistantStatus}
             value={assistantStatusLabel}
           />
           <MetricCard
@@ -119,8 +115,8 @@ export default async function AdminOverviewPage() {
         <section className="grid grid-cols-1 gap-7 xl:grid-cols-12">
           <div className="rounded-xl border border-(--line) bg-white p-5 sm:p-6 xl:col-span-8">
             <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">服务状态与闭环</h2>
-              <span className="flex items-center gap-1.5 text-xs text-(--ink-400)">
+              <h2 className="text-lg font-[650]">服务状态与闭环</h2>
+              <span className="flex items-center gap-1.5 text-xs text-(--ink-600)">
                 <CheckCircle2 className="size-4 text-(--success)" />
                 管理员入口与组织边界已就绪
               </span>
@@ -137,14 +133,24 @@ export default async function AdminOverviewPage() {
                 icon={MessageSquareText}
                 label="有据回答"
               />
-              <LoopStep detail="等待访客评价" icon={CheckCircle2} label="质量反馈" muted />
+              <LoopStep
+                detail="等待访客评价"
+                icon={CheckCircle2}
+                label="质量反馈"
+                muted
+              />
               <LoopStep
                 detail={`${pendingQuestions} 待处理`}
                 icon={CircleHelp}
                 label="待解决问题"
                 muted
               />
-              <LoopStep detail="持续迭代" icon={RefreshCw} label="更新知识" muted />
+              <LoopStep
+                detail="持续迭代"
+                icon={RefreshCw}
+                label="更新知识"
+                muted
+              />
             </div>
 
             <div className="mt-8 flex items-center gap-3 rounded-lg border border-(--line) bg-(--paper) p-4">
@@ -163,14 +169,14 @@ export default async function AdminOverviewPage() {
                 </span>
                 <span className="font-medium">默认助手</span>
               </div>
-              <StatusBadge label={assistantStatusLabel} />
+              <StatusBadge status={assistantStatus} />
             </div>
 
             <div className="flex-1 p-5">
-              <p className="text-[11px] font-semibold text-(--ink-400)">
+              <p className="text-[11px] font-semibold text-(--ink-600)">
                 演示数据
               </p>
-              <h2 className="mt-2 text-lg font-semibold text-(--forest-950)">
+              <h2 className="mt-2 text-lg font-[650] text-(--forest-950)">
                 {assistant?.name ?? "演示网站服务助手"}
               </h2>
               <p className="mt-3 text-[13px] leading-6 text-(--ink-600)">
@@ -179,7 +185,7 @@ export default async function AdminOverviewPage() {
               </p>
             </div>
 
-            <div className="border-t border-(--line) p-4 text-xs text-(--ink-400)">
+            <div className="border-t border-(--line) p-4 text-xs text-(--ink-600)">
               添加并处理知识来源后即可预览与发布。
             </div>
           </div>
@@ -187,7 +193,7 @@ export default async function AdminOverviewPage() {
 
         <section className="rounded-xl border border-(--line) bg-white">
           <div className="border-b border-(--line) p-5">
-            <h2 className="text-lg font-semibold">系统基线</h2>
+            <h2 className="text-lg font-[650]">系统基线</h2>
           </div>
           <dl className="grid grid-cols-1 divide-y divide-(--line) sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <SystemFact label="组织" value={organization.name} />
@@ -204,7 +210,7 @@ type MetricCardProps = {
   label: string;
   value: string;
   description: string;
-  status?: string;
+  status?: Status;
   tone?: "neutral" | "warning";
 };
 
@@ -221,7 +227,7 @@ function MetricCard({
         <span className="text-[13px] font-medium text-(--ink-600)">
           {label}
         </span>
-        {status ? <StatusBadge label={status} /> : null}
+        {status ? <StatusBadge status={status} /> : null}
       </div>
       <div className="mt-4">
         <p
@@ -231,18 +237,9 @@ function MetricCard({
         >
           {value}
         </p>
-        <p className="mt-1 text-[11px] text-(--ink-400)">{description}</p>
+        <p className="mt-1 text-[11px] text-(--ink-600)">{description}</p>
       </div>
     </article>
-  );
-}
-
-function StatusBadge({ label }: { label: string }) {
-  return (
-    <span className="mono inline-flex items-center gap-1.5 rounded-full border border-(--line) px-2 py-0.5 text-[10px] font-semibold text-(--ink-600)">
-      <span className="size-1.5 rounded-full bg-(--ink-400)" />
-      {label}
-    </span>
   );
 }
 
@@ -267,7 +264,7 @@ function LoopStep({ label, detail, icon: Icon, muted = false }: LoopStepProps) {
       </span>
       <div>
         <p className="text-xs font-medium">{label}</p>
-        <p className="mono mt-1 text-[10px] text-(--ink-400)">{detail}</p>
+        <p className="mono mt-1 text-[10px] text-(--ink-600)">{detail}</p>
       </div>
     </div>
   );
@@ -276,7 +273,7 @@ function LoopStep({ label, detail, icon: Icon, muted = false }: LoopStepProps) {
 function SystemFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="p-5">
-      <dt className="text-[11px] font-semibold text-(--ink-400)">{label}</dt>
+      <dt className="text-[11px] font-semibold text-(--ink-600)">{label}</dt>
       <dd className="mt-1 text-[13px] font-medium">{value}</dd>
     </div>
   );

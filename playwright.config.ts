@@ -15,7 +15,8 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "DETERMINISTIC_EMBEDDINGS=true node_modules/.bin/next dev",
+    command:
+      "DETERMINISTIC_EMBEDDINGS=true E2E_KNOWLEDGE_PROCESSING_DELAY_MS=500 node_modules/.bin/next dev",
     url: "http://127.0.0.1:3000",
     reuseExistingServer: false,
     timeout: 120_000,

@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
+
 export default function UnauthorizedPage() {
   return (
     <main className="flex min-h-screen items-center justify-center px-5">
@@ -11,12 +13,9 @@ export default function UnauthorizedPage() {
         <p className="mt-3 text-sm text-(--ink-600)">
           Supabase 认证成功不代表拥有后台权限。只有组织管理员成员可以读取组织数据。
         </p>
-        <Link
-          className="mt-6 inline-flex h-10 items-center rounded-lg border border-(--line-strong) px-4 text-sm font-medium"
-          href="/login"
-        >
-          返回登录
-        </Link>
+        <Button asChild className="mt-6" variant="secondary">
+          <Link href="/login">返回登录</Link>
+        </Button>
       </section>
     </main>
   );

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 :root {
   --paper: #f7f7f3;
@@ -21,7 +22,29 @@
   --danger-light: #fbe7e5;
   --info: #326a8c;
   --info-light: #e6f0f6;
+  --background: var(--paper);
+  --foreground: var(--ink-900);
+  --card: var(--surface);
+  --card-foreground: var(--ink-900);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink-900);
+  --primary: var(--forest-800);
+  --primary-foreground: var(--surface);
+  --secondary: var(--surface);
+  --secondary-foreground: var(--ink-900);
+  --muted: var(--paper);
+  --muted-foreground: var(--ink-600);
+  --accent: var(--forest-100);
+  --accent-foreground: var(--forest-950);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--forest-800);
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-badge: 999px;
 }
+
 * {
   box-sizing: border-box;
 }
@@ -42,7 +65,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -75,5 +99,71 @@ a {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@theme inline {
+  --font-sans:
+    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Inter, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-forest-950: var(--forest-950);
+  --color-forest-800: var(--forest-800);
+  --color-forest-100: var(--forest-100);
+  --color-ink-900: var(--ink-900);
+  --color-ink-600: var(--ink-600);
+  --color-ink-400: var(--ink-400);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-success: var(--success);
+  --color-success-light: var(--success-light);
+  --color-processing: var(--processing);
+  --color-processing-light: var(--processing-light);
+  --color-warning: var(--warning);
+  --color-warning-light: var(--warning-light);
+  --color-danger: var(--danger);
+  --color-danger-light: var(--danger-light);
+  --color-info: var(--info);
+  --color-info-light: var(--info-light);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-control);
+  --radius-xl: var(--radius-card);
+  --radius-2xl: var(--radius-card);
+  --radius-3xl: var(--radius-card);
+  --radius-4xl: var(--radius-badge);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
   }
 }
