@@ -468,6 +468,7 @@ test("提取成功的网页通过与手工内容一致的链路形成可用知�
     | undefined;
   let completedRevision: CompletedKnowledgeRevision | undefined;
   const embeddedTexts: string[][] = [];
+  const processingEvents: string[] = [];
 
   const result = await processWebKnowledgeRevision(
     {
@@ -475,7 +476,8 @@ test("提取成功的网页通过与手工内容一致的链路形成可用知�
       originalUrl: "https://docs.example.com/service",
     },
     {
-      async fetchPage() {
+      async fetchPage(_url, beforeExtract) {
+        await beforeExtract();
         return {
           status: "success",
           page: {
@@ -494,16 +496,22 @@ test("提取成功的网页通过与手工内容一致的链路形成可用知�
         };
       },
       async prepareRevision(revision) {
+        processingEvents.push("prepare");
         preparedRevision = revision;
       },
       embeddingProvider: {
         async embed(texts) {
+          processingEvents.push("embed");
           embeddedTexts.push(texts);
           return texts.map(() => [0.1, 0.2]);
         },
       },
       revisionRepository: {
+        async advanceStage(_revisionId, stage) {
+          processingEvents.push(stage);
+        },
         async complete(revision) {
+          processingEvents.push("complete");
           completedRevision = revision;
         },
         async fail() {
@@ -534,4 +542,11 @@ test("提取成功的网页通过与手工内容一致的链路形成可用知�
     embeddedTexts,
     [completedRevision?.contentUnits.map(({ content }) => content)],
   );
+  assert.deepEqual(processingEvents, [
+    "extracting",
+    "prepare",
+    "vectorizing",
+    "embed",
+    "complete",
+  ]);
 });

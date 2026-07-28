@@ -24,6 +24,19 @@ function createRepository(
     | "complete_web_knowledge_revision",
 ): KnowledgeRevisionRepository {
   return {
+    async advanceStage(revisionId, stage) {
+      const { error } = await supabase.rpc(
+        "advance_knowledge_revision_stage",
+        {
+          revision_id: revisionId,
+          next_stage: stage,
+        },
+      );
+
+      if (error) {
+        throw new Error("无法更新知识版本处理阶段", { cause: error });
+      }
+    },
     async complete(revision: CompletedKnowledgeRevision) {
       const { error } = await supabase.rpc(completionFunction, {
         revision_id: revision.id,

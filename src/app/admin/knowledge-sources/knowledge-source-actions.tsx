@@ -19,23 +19,32 @@ import { Spinner } from "@/components/ui/spinner";
 
 import {
   deleteKnowledgeSource,
+  refreshWebKnowledgeSource,
   retryKnowledgeSource,
   setKnowledgeSourceEnabled,
 } from "./actions";
+import {
+  ManualKnowledgeSourceUpdate,
+  type ManualKnowledgeSourceRevision,
+} from "./manual-knowledge-source-update";
 
 type KnowledgeSourceActionsProps = {
   processing: boolean;
   retryable: boolean;
+  manualRevision: ManualKnowledgeSourceRevision | null;
   sourceId: string;
   sourceTitle: string;
+  sourceType: "manual" | "url";
   status: "processing" | "available" | "failed" | "disabled";
 };
 
 export function KnowledgeSourceActions({
   processing,
   retryable,
+  manualRevision,
   sourceId,
   sourceTitle,
+  sourceType,
   status,
 }: KnowledgeSourceActionsProps) {
   const router = useRouter();
@@ -45,10 +54,13 @@ export function KnowledgeSourceActions({
   const shouldEnable = status === "disabled";
   const toggleLabel = shouldEnable ? "重新启用" : "停用";
 
-  async function toggleEnabled() {
+  async function runAction(
+    action: () => Promise<KnowledgeSourceActionResult>,
+    onSuccess?: () => void,
+  ) {
     setPending(true);
     setError(null);
-    const result = await setKnowledgeSourceEnabled(sourceId, shouldEnable);
+    const result = await action();
 
     if (result.status === "error") {
       setError(result.message);
@@ -56,43 +68,56 @@ export function KnowledgeSourceActions({
       return;
     }
 
+    onSuccess?.();
     setPending(false);
     router.refresh();
+  }
+
+  async function toggleEnabled() {
+    await runAction(() =>
+      setKnowledgeSourceEnabled(sourceId, shouldEnable),
+    );
   }
 
   async function retry() {
-    setPending(true);
-    setError(null);
-    const result = await retryKnowledgeSource(sourceId);
+    await runAction(() => retryKnowledgeSource(sourceId));
+  }
 
-    if (result.status === "error") {
-      setError(result.message);
-      setPending(false);
-      return;
-    }
-
-    setPending(false);
-    router.refresh();
+  async function refreshWeb() {
+    await runAction(() => refreshWebKnowledgeSource(sourceId));
   }
 
   async function remove() {
-    setPending(true);
-    setError(null);
-    const result = await deleteKnowledgeSource(sourceId);
-
-    if (result.status === "error") {
-      setError(result.message);
-      setPending(false);
-      return;
-    }
-
-    setDeleteOpen(false);
-    router.refresh();
+    await runAction(
+      () => deleteKnowledgeSource(sourceId),
+      () => setDeleteOpen(false),
+    );
   }
 
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center justify-end gap-1">
+        {!processing && status !== "disabled" && sourceType === "manual"
+        && manualRevision ? (
+          <ManualKnowledgeSourceUpdate
+            revision={manualRevision}
+            sourceId={sourceId}
+          />
+        ) : null}
+        {!processing && status !== "disabled" && sourceType === "url"
+        && !retryable ? (
+          <Button
+            disabled={pending}
+            onClick={refreshWeb}
+            type="button"
+            variant="ghost"
+          >
+            {pending ? (
+              <Spinner aria-hidden="true" data-icon="inline-start" />
+            ) : null}
+            {pending ? "正在提交…" : "重新处理"}
+          </Button>
+        ) : null}
         {retryable && !processing && status !== "disabled" ? (
           <Button
             disabled={pending}
@@ -166,3 +191,7 @@ export function KnowledgeSourceActions({
     </div>
   );
 }
+
+type KnowledgeSourceActionResult =
+  | { status: "success" }
+  | { status: "error"; message: string };

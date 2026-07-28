@@ -88,6 +88,16 @@ test("管理员导入受控公开网页并看到提取标题和可用状态", as
     "href",
     "http://127.0.0.1:4173/article",
   );
+
+  const refreshProcessingObserved = sourceRow
+    .getByText("处理中", { exact: true })
+    .waitFor();
+  await sourceRow.getByRole("button", { name: "重新处理" }).click();
+  await refreshProcessingObserved;
+  await expect(sourceRow).toContainText("新知识版本 v2");
+  await expect(sourceRow).toContainText("当前 v1 继续可用");
+  await expect(sourceRow).toContainText("可用", { timeout: 15_000 });
+  await expect(sourceRow).toContainText("v2");
 });
 
 test("管理员导入手工知识来源并在概览看到可用数量", async ({
@@ -149,6 +159,141 @@ test("管理员导入手工知识来源并在概览看到可用数量", async ({
   await expect(
     page.getByRole("article").filter({ hasText: "可用知识来源" }),
   ).toContainText(String(availableSourcesBefore + 1).padStart(2, "0"));
+});
+
+test("管理员更新手工知识来源时旧版本持续可用且失败更新无需恢复", async ({
+  page,
+  request,
+}) => {
+  await signInAsAdministrator(page, request);
+  await page.goto("/admin/knowledge-sources");
+  await page.getByRole("button", { name: "添加知识来源" }).click();
+  await page.getByRole("tab", { name: "手工内容" }).click();
+  await page
+    .getByLabel("标题", { exact: true })
+    .fill("等待原子更新的服务说明");
+  await page
+    .getByLabel("正文", { exact: true })
+    .fill(repeatLifecycleBody("首次形成可用版本"));
+
+  const originalRow = page
+    .getByRole("row")
+    .filter({ hasText: "等待原子更新的服务说明" });
+  await page.getByRole("button", { name: "确认添加" }).click();
+  await expect(originalRow).toContainText("可用", { timeout: 15_000 });
+  await expect(originalRow).toContainText("v1");
+
+  await originalRow.getByRole("button", { name: "更新" }).click();
+  const updateSheet = page.getByRole("dialog", {
+    name: "更新手工知识来源",
+  });
+  await expect(updateSheet).toHaveAccessibleDescription(
+    "新知识版本完整处理成功后才会替换当前版本；处理期间当前版本继续参与回答。",
+  );
+  await updateSheet
+    .getByLabel("更新标题", { exact: true })
+    .fill("已经原子更新的服务说明");
+  await updateSheet
+    .getByLabel("更新正文", { exact: true })
+    .fill(repeatLifecycleBody("原子替换当前版本"));
+
+  const updateProcessingObserved = originalRow
+    .getByText("处理中", { exact: true })
+    .waitFor();
+  await updateSheet
+    .getByRole("button", { name: "创建新知识版本" })
+    .click();
+  await updateProcessingObserved;
+  await expect(originalRow).toContainText("新知识版本 v2");
+  await expect(originalRow).toContainText("当前 v1 继续可用");
+
+  const updatedRow = page
+    .getByRole("row")
+    .filter({ hasText: "已经原子更新的服务说明" });
+  await expect(updatedRow).toContainText("可用", { timeout: 15_000 });
+  await expect(updatedRow).toContainText("v2");
+
+  await updatedRow.getByRole("button", { name: "更新" }).click();
+  await page
+    .getByRole("dialog", { name: "更新手工知识来源" })
+    .getByLabel("更新正文", { exact: true })
+    .fill("这次更新过短，应该失败。");
+  await page
+    .getByRole("dialog", { name: "更新手工知识来源" })
+    .getByRole("button", { name: "创建新知识版本" })
+    .click();
+
+  await expect(updatedRow).toContainText(
+    "正文内容过短，请补充至少 80 个字符后重试。",
+    { timeout: 15_000 },
+  );
+  await expect(updatedRow).toContainText("可用");
+  await expect(updatedRow).toContainText("v2");
+});
+
+test("失败的手工更新保留草稿且重新提交不会跳过版本号", async ({
+  page,
+  request,
+}) => {
+  await signInAsAdministrator(page, request);
+  await page.goto("/admin/knowledge-sources");
+  await page.getByRole("button", { name: "添加知识来源" }).click();
+  await page.getByRole("tab", { name: "手工内容" }).click();
+  await page
+    .getByLabel("标题", { exact: true })
+    .fill("保留失败草稿的服务说明");
+  await page
+    .getByLabel("正文", { exact: true })
+    .fill(repeatLifecycleBody("创建初始版本"));
+
+  const sourceRow = page
+    .getByRole("row")
+    .filter({ hasText: "保留失败草稿的服务说明" });
+  await page.getByRole("button", { name: "确认添加" }).click();
+  await expect(sourceRow).toContainText("可用", { timeout: 15_000 });
+  await expect(sourceRow).toContainText("v1");
+
+  await sourceRow.getByRole("button", { name: "更新" }).click();
+  await page
+    .getByRole("dialog", { name: "更新手工知识来源" })
+    .getByLabel("更新正文", { exact: true })
+    .fill("两字");
+  await page
+    .getByRole("dialog", { name: "更新手工知识来源" })
+    .getByRole("button", { name: "创建新知识版本" })
+    .click();
+
+  await expect(sourceRow).toContainText(
+    "正文内容过短，请补充至少 80 个字符后重试。",
+    { timeout: 15_000 },
+  );
+  await expect(
+    sourceRow.getByText("失败", { exact: true }),
+  ).toBeVisible();
+  await expect(sourceRow).toContainText("v1");
+
+  await sourceRow.getByRole("button", { name: "更新" }).click();
+  const retrySheet = page.getByRole("dialog", {
+    name: "更新手工知识来源",
+  });
+  await expect(
+    retrySheet.getByLabel("更新正文", { exact: true }),
+  ).toHaveValue("两字");
+  await retrySheet
+    .getByLabel("更新正文", { exact: true })
+    .fill(repeatLifecycleBody("修正失败草稿"));
+
+  const retryProcessingObserved = sourceRow
+    .getByText("处理中", { exact: true })
+    .waitFor();
+  await retrySheet
+    .getByRole("button", { name: "创建新知识版本" })
+    .click();
+  await retryProcessingObserved;
+  await expect(sourceRow).toContainText("新知识版本 v2");
+  await expect(sourceRow).toContainText("当前 v1 继续可用");
+  await expect(sourceRow).toContainText("可用", { timeout: 15_000 });
+  await expect(sourceRow).toContainText("v2");
 });
 
 test("无效手工正文显示安全失败原因且没有可用版本", async ({
@@ -407,11 +552,12 @@ test("360px 下管理员可使用移动导航且主要操作目标不小于 40px
 async function expectTargetToBeAtLeast40Pixels(
   target: ReturnType<Page["getByRole"]>,
 ) {
+  const layoutFloatTolerance = 0.00001;
   const box = await target.boundingBox();
 
   expect(box).not.toBeNull();
-  expect(box!.width).toBeGreaterThanOrEqual(40);
-  expect(box!.height).toBeGreaterThanOrEqual(40);
+  expect(box!.width + layoutFloatTolerance).toBeGreaterThanOrEqual(40);
+  expect(box!.height + layoutFloatTolerance).toBeGreaterThanOrEqual(40);
 }
 
 function repeatLifecycleBody(action: string) {

@@ -25,7 +25,7 @@ type SourceStatus = Extract<
 type KnowledgeSource = {
   id: string;
   title: string;
-  source_type: string;
+  source_type: "manual" | "url";
   original_url: string | null;
   status: SourceStatus;
   failure_reason: string | null;
@@ -33,9 +33,26 @@ type KnowledgeSource = {
   updated_at: string;
 };
 
+type ProcessingStage =
+  | "fetching"
+  | "extracting"
+  | "forming_content_units"
+  | "vectorizing";
+
+type KnowledgeRevision = {
+  id: string;
+  knowledge_source_id: string;
+  title: string;
+  body: string;
+  original_url: string | null;
+  status: "processing" | "available" | "failed" | "superseded";
+  processing_stage: ProcessingStage | null;
+  created_at: string;
+};
+
 export default async function KnowledgeSourcesPage() {
   const { supabase, organization } = await requireAdministrator();
-  const [sourcesResult, processingRevisionsResult] = await Promise.all([
+  const [sourcesResult, revisionsResult] = await Promise.all([
     supabase
       .from("knowledge_sources")
       .select(
@@ -45,18 +62,17 @@ export default async function KnowledgeSourcesPage() {
       .order("updated_at", { ascending: false }),
     supabase
       .from("knowledge_revisions")
-      .select("knowledge_source_id")
+      .select(
+        "id, knowledge_source_id, title, body, original_url, status, processing_stage, created_at",
+      )
       .eq("organization_id", organization.id)
-      .eq("status", "processing"),
+      .order("created_at", { ascending: true }),
   ]);
   const sources = (sourcesResult.data ?? []) as KnowledgeSource[];
-  const processingSourceIds = new Set(
-    (processingRevisionsResult.data ?? []).map(
-      ({ knowledge_source_id }) => knowledge_source_id as string,
-    ),
-  );
+  const revisions = (revisionsResult.data ?? []) as KnowledgeRevision[];
+  const revisionsBySource = groupRevisionsBySource(revisions);
   const hasProcessingSources =
-    processingSourceIds.size > 0 ||
+    revisions.some(({ status }) => status === "processing") ||
     sources.some(({ status }) => status === "processing");
 
   return (
@@ -90,10 +106,7 @@ export default async function KnowledgeSourcesPage() {
                   {sources.map((source) => (
                     <KnowledgeSourceRow
                       key={source.id}
-                      processing={
-                        processingSourceIds.has(source.id) ||
-                        source.status === "processing"
-                      }
+                      revisions={revisionsBySource.get(source.id) ?? []}
                       source={source}
                     />
                   ))}
@@ -122,13 +135,47 @@ function EmptyKnowledgeSources() {
 }
 
 function KnowledgeSourceRow({
-  processing,
+  revisions,
   source,
 }: {
-  processing: boolean;
+  revisions: KnowledgeRevision[];
   source: KnowledgeSource;
 }) {
   const SourceIcon = source.source_type === "url" ? Globe : FileText;
+  const processingRevision = revisions.find(
+    ({ status }) => status === "processing",
+  );
+  const currentRevision = revisions.find(
+    ({ id }) => id === source.current_revision_id,
+  );
+  const latestRevision = revisions.at(-1);
+  const successfulRevisions = revisions.filter(
+    ({ status }) => status === "available" || status === "superseded",
+  );
+  const editableRevision =
+    latestRevision?.status === "failed"
+      ? latestRevision
+      : currentRevision ?? latestRevision;
+  const processing = Boolean(processingRevision);
+  const currentVersion = currentRevision
+    ? successfulRevisions.findIndex(({ id }) => id === currentRevision.id) + 1
+    : null;
+  const processingVersion = processingRevision
+    ? successfulRevisions.length + 1
+    : null;
+  let displayStatus: SourceStatus = source.status;
+
+  if (latestRevision?.status === "failed") {
+    displayStatus = "failed";
+  }
+
+  if (source.status === "disabled") {
+    displayStatus = "disabled";
+  }
+
+  if (processing) {
+    displayStatus = "processing";
+  }
 
   return (
     <tr>
@@ -162,34 +209,76 @@ function KnowledgeSourceRow({
         )}
       </td>
       <td className="px-6 py-4">
-        <StatusBadge status={processing ? "processing" : source.status} />
-        {processing && source.current_revision_id ? (
-          <p className="mt-1 max-w-68 text-[11px] leading-4 text-(--ink-600)">
-            当前版本继续可用
-          </p>
+        <StatusBadge status={displayStatus} />
+        {processingRevision ? (
+          <div className="mt-1 max-w-68 text-[11px] leading-4 text-(--ink-600)">
+            <p>
+              新知识版本 v{processingVersion} ·{" "}
+              {formatProcessingStage(processingRevision.processing_stage)}
+            </p>
+            {currentVersion ? <p>当前 v{currentVersion} 继续可用</p> : null}
+          </div>
         ) : source.failure_reason ? (
-          <p className="mt-1 max-w-68 text-[11px] leading-4 text-(--danger)">
-            {source.failure_reason}
-          </p>
+          <div className="mt-1 max-w-68 text-[11px] leading-4">
+            <p className="text-(--danger)">{source.failure_reason}</p>
+            {currentVersion ? (
+              <p className="text-(--ink-600)">
+                失败草稿已保留；当前 v{currentVersion} 继续可用
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </td>
       <td className="mono px-6 py-4 text-xs text-(--ink-600)">
-        {source.current_revision_id ? "v1" : "—"}
+        {currentVersion ? `v${currentVersion}` : "—"}
       </td>
       <td className="mono px-6 py-4 text-xs text-(--ink-600)">
         {formatUpdatedAt(source.updated_at)}
       </td>
       <td className="px-6 py-1.5 text-right">
         <KnowledgeSourceActions
+          manualRevision={
+            source.source_type === "manual" && editableRevision
+              ? {
+                  title: editableRevision.title,
+                  body: editableRevision.body,
+                  originalUrl: editableRevision.original_url,
+                }
+              : null
+          }
           processing={processing}
           retryable={Boolean(source.failure_reason)}
           sourceId={source.id}
           sourceTitle={source.title}
+          sourceType={source.source_type}
           status={source.status}
         />
       </td>
     </tr>
   );
+}
+
+function groupRevisionsBySource(revisions: KnowledgeRevision[]) {
+  const grouped = new Map<string, KnowledgeRevision[]>();
+
+  for (const revision of revisions) {
+    const sourceRevisions = grouped.get(revision.knowledge_source_id) ?? [];
+    sourceRevisions.push(revision);
+    grouped.set(revision.knowledge_source_id, sourceRevisions);
+  }
+
+  return grouped;
+}
+
+function formatProcessingStage(stage: ProcessingStage | null) {
+  const labels: Record<ProcessingStage, string> = {
+    fetching: "正在抓取",
+    extracting: "正在提取",
+    forming_content_units: "正在形成内容单元",
+    vectorizing: "正在向量化",
+  };
+
+  return stage ? labels[stage] : "正在处理";
 }
 
 function formatUpdatedAt(value: string) {

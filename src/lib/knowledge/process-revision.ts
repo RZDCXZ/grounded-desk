@@ -21,9 +21,19 @@ export type EmbeddingProvider = {
 };
 
 export type KnowledgeRevisionRepository = {
+  advanceStage?(
+    revisionId: string,
+    stage: KnowledgeRevisionProcessingStage,
+  ): Promise<void>;
   complete(revision: CompletedKnowledgeRevision): Promise<void>;
   fail(revisionId: string, reason: string): Promise<void>;
 };
+
+export type KnowledgeRevisionProcessingStage =
+  | "fetching"
+  | "extracting"
+  | "forming_content_units"
+  | "vectorizing";
 
 export type KnowledgeProcessingDependencies = {
   embeddingProvider: EmbeddingProvider;
@@ -69,6 +79,16 @@ export async function processKnowledgeRevision(
   if (preparedUnits.length === 0) {
     const reason =
       "正文无法形成有效内容单元，请补充清晰的标题和段落内容后重试。";
+    return failRevision(revision.id, reason, dependencies.revisionRepository);
+  }
+
+  try {
+    await dependencies.revisionRepository.advanceStage?.(
+      revision.id,
+      "vectorizing",
+    );
+  } catch {
+    const reason = "知识处理暂时无法完成，请稍后重试。";
     return failRevision(revision.id, reason, dependencies.revisionRepository);
   }
 

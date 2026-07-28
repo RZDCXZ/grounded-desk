@@ -9,6 +9,7 @@ import {
 test("完整手工正文形成保留标题与段落语义的可用内容单元和向量", async () => {
   let completedRevision: CompletedKnowledgeRevision | undefined;
   const embeddedTexts: string[][] = [];
+  const processingEvents: string[] = [];
 
   const result = await processKnowledgeRevision(
     {
@@ -27,12 +28,17 @@ test("完整手工正文形成保留标题与段落语义的可用内容单元�
     {
       embeddingProvider: {
         async embed(texts) {
+          processingEvents.push("embed");
           embeddedTexts.push(texts);
           return texts.map((_, index) => [index + 0.1, index + 0.2]);
         },
       },
       revisionRepository: {
+        async advanceStage(_revisionId, stage) {
+          processingEvents.push(stage);
+        },
         async complete(revision) {
+          processingEvents.push("complete");
           completedRevision = revision;
         },
         async fail() {
@@ -55,6 +61,7 @@ test("完整手工正文形成保留标题与段落语义的可用内容单元�
     [completedRevision?.contentUnits.map(({ content }) => content)],
   );
   assert.deepEqual(completedRevision?.contentUnits[1]?.embedding, [1.1, 1.2]);
+  assert.deepEqual(processingEvents, ["vectorizing", "embed", "complete"]);
 });
 
 test("正文过短时保存可理解的失败原因且不调用向量服务", async () => {

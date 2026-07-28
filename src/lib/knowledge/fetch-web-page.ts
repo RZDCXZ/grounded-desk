@@ -25,6 +25,7 @@ export type WebFetchDependencies = {
   allowPrivateAddresses: boolean;
   environment: string;
   timeoutMilliseconds?: number;
+  beforeExtract?(): Promise<void>;
   resolveHostname(hostname: string): Promise<ResolvedWebAddress[]>;
   request(input: {
     url: URL;
@@ -237,6 +238,7 @@ export async function fetchWebKnowledgePage(
     }
 
     const html = decodeHtml(Buffer.concat(chunks), contentType);
+    await dependencies.beforeExtract?.();
     const page = extractWebPage(html, url);
 
     if (!page.body) {

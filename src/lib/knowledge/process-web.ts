@@ -13,7 +13,10 @@ export type WebKnowledgeRevision = {
 
 type WebKnowledgeProcessingDependencies =
   KnowledgeProcessingDependencies & {
-    fetchPage(url: string): Promise<WebPageFetchResult>;
+    fetchPage(
+      url: string,
+      beforeExtract: () => Promise<void>,
+    ): Promise<WebPageFetchResult>;
     prepareRevision(revision: KnowledgeRevision): Promise<void>;
   };
 
@@ -21,7 +24,23 @@ export async function processWebKnowledgeRevision(
   revision: WebKnowledgeRevision,
   dependencies: WebKnowledgeProcessingDependencies,
 ): Promise<KnowledgeProcessingResult> {
-  const fetched = await dependencies.fetchPage(revision.originalUrl);
+  let fetched: WebPageFetchResult;
+
+  try {
+    fetched = await dependencies.fetchPage(
+      revision.originalUrl,
+      async () => {
+        await dependencies.revisionRepository.advanceStage?.(
+          revision.id,
+          "extracting",
+        );
+      },
+    );
+  } catch {
+    const reason = "网页内容暂时无法保存，请稍后重试。";
+    await dependencies.revisionRepository.fail(revision.id, reason);
+    return { status: "failed", reason };
+  }
 
   if (fetched.status === "failed") {
     await dependencies.revisionRepository.fail(revision.id, fetched.reason);
