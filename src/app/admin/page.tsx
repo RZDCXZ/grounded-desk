@@ -6,6 +6,7 @@ import {
   MessageSquareText,
   RefreshCw,
 } from "lucide-react";
+import Link from "next/link";
 
 import { requireAdministrator } from "@/lib/auth/require-admin";
 import { getThirtyDaysAgo } from "@/lib/time";
@@ -73,14 +74,12 @@ export default async function AdminOverviewPage() {
           >
             预览助手
           </button>
-          <button
-            className="h-10 rounded-lg bg-(--forest-800) px-4 text-sm font-medium text-white opacity-50"
-            disabled
-            title="知识来源导入将在后续工单开放"
-            type="button"
+          <Link
+            className="inline-flex h-10 items-center rounded-lg bg-(--forest-800) px-4 text-sm font-medium text-white"
+            href="/admin/knowledge-sources"
           >
             添加知识来源
-          </button>
+          </Link>
         </div>
       </header>
 
@@ -96,7 +95,11 @@ export default async function AdminOverviewPage() {
             value={assistantStatusLabel}
           />
           <MetricCard
-            description="当前没有可参与回答的知识来源"
+            description={
+              availableSources > 0
+                ? "已启用并可参与后续有据回答"
+                : "当前没有可参与回答的知识来源"
+            }
             label="可用知识来源"
             value={String(availableSources).padStart(2, "0")}
           />

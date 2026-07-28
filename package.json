@@ -2,6 +2,7 @@
   "name": "grounded-desk",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@11.13.0",
   "engines": {
     "node": ">=24.0.0"
@@ -15,8 +16,9 @@
     "supabase:start": "supabase start",
     "db:reset": "supabase db reset",
     "test:db": "supabase test db",
+    "test:service": "node --test tests/service/*.test.ts",
     "test:e2e": "playwright test",
-    "test": "pnpm typecheck && pnpm lint && pnpm db:reset && pnpm test:db && pnpm test:e2e"
+    "test": "pnpm typecheck && pnpm lint && pnpm test:service && pnpm db:reset && pnpm test:db && pnpm test:e2e"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.3",
