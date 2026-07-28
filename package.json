@@ -16,7 +16,7 @@
     "supabase:start": "supabase start",
     "db:reset": "supabase db reset",
     "test:db": "supabase test db",
-    "test:service": "node --test tests/service/*.test.ts",
+    "test:service": "node --conditions=react-server --test tests/service/*.test.ts",
     "test:e2e": "pnpm db:reset && playwright test",
     "test": "pnpm typecheck && pnpm lint && pnpm test:service && pnpm db:reset && pnpm test:db && playwright test"
   },

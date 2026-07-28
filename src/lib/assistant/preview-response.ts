@@ -1,7 +1,14 @@
+import { ProviderCallError } from "../ai/provider-call.ts";
 import type { GroundedAnswerEvent } from "./grounded-answer.ts";
+
+type PreviewContact = {
+  label: string;
+  url: string;
+};
 
 export function createAssistantPreviewResponse(
   events: AsyncIterable<GroundedAnswerEvent>,
+  contact: PreviewContact,
 ) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -10,13 +17,15 @@ export function createAssistantPreviewResponse(
         for await (const event of events) {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
         }
-      } catch {
+      } catch (error) {
+        const failure = describeTemporaryFailure(error);
         controller.enqueue(
           encoder.encode(
             `${JSON.stringify({
               type: "temporary_failure",
-              message: "供应商服务暂时不可用，请稍后重试。",
+              ...failure,
               retryable: true,
+              contact,
             })}\n`,
           ),
         );
@@ -33,4 +42,27 @@ export function createAssistantPreviewResponse(
       "x-content-type-options": "nosniff",
     },
   });
+}
+
+function describeTemporaryFailure(error: unknown) {
+  if (error instanceof ProviderCallError) {
+    if (error.errorType === "rate_limit") {
+      return {
+        reason: "rate_limited" as const,
+        message: "供应商请求频率受限，请稍后重试。",
+      };
+    }
+
+    if (error.errorType === "input_rejected") {
+      return {
+        reason: "input_rejected" as const,
+        message: "当前输入未被供应商接受，请调整问题后重试。",
+      };
+    }
+  }
+
+  return {
+    reason: "provider_failure" as const,
+    message: "供应商服务暂时不可用，请稍后重试。",
+  };
 }

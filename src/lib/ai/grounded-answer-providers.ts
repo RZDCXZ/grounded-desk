@@ -2,7 +2,6 @@ import "server-only";
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
-  APICallError,
   EmptyResponseBodyError,
   InvalidResponseDataError,
   JSONParseError,
@@ -16,10 +15,10 @@ import {
   safeTokenCount,
   type ProviderCallMetadata,
   type ProviderCallResult,
-} from "@/lib/ai/provider-call";
+} from "./provider-call.ts";
 import {
   type GroundedEvidence,
-} from "@/lib/assistant/grounded-answer";
+} from "../assistant/grounded-answer.ts";
 
 const DEFAULT_SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
 const DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3";
@@ -126,7 +125,11 @@ export function getGroundedAnswerRerankingProvider() {
       if (!response.ok) {
         throw providerError(
           `重排服务返回 HTTP ${response.status}`,
-          response.status === 429 ? "rate_limit" : "provider_http",
+          response.status === 429
+            ? "rate_limit"
+            : response.status === 400 || response.status === 422
+              ? "input_rejected"
+              : "provider_http",
           traceId,
           startedAt,
         );
@@ -254,8 +257,17 @@ export function getGroundedAnswerGenerationProvider() {
       return {
         textStream: (async function* () {
           try {
-            for await (const delta of result.textStream) {
-              yield delta;
+            for await (const part of result.fullStream) {
+              if (part.type === "text-delta") {
+                yield part.text;
+              } else if (part.type === "error") {
+                throw part.error;
+              } else if (part.type === "abort") {
+                throw new DOMException(
+                  part.reason ?? "回答生成请求已中止",
+                  "AbortError",
+                );
+              }
             }
 
             const [usage, response] = await Promise.all([
@@ -296,14 +308,18 @@ export function getGroundedAnswerGenerationProvider() {
 }
 
 function classifyAnswerProviderError(error: unknown) {
-  if (APICallError.isInstance(error)) {
-    if (error.statusCode === 429) {
-      return "rate_limit";
-    }
+  const statusCode = findProviderStatusCode(error);
 
-    if (error.statusCode === 408) {
-      return "timeout";
-    }
+  if (statusCode === 429) {
+    return "rate_limit";
+  }
+
+  if (statusCode === 408) {
+    return "timeout";
+  }
+
+  if (statusCode === 400 || statusCode === 422) {
+    return "input_rejected";
   }
 
   if (
@@ -322,6 +338,34 @@ function classifyAnswerProviderError(error: unknown) {
   }
 
   return "network";
+}
+
+function findProviderStatusCode(error: unknown): number | undefined {
+  let current = error;
+  const visited = new Set<unknown>();
+
+  while (
+    typeof current === "object" &&
+    current !== null &&
+    !visited.has(current)
+  ) {
+    visited.add(current);
+
+    if (
+      "statusCode" in current &&
+      typeof current.statusCode === "number"
+    ) {
+      return current.statusCode;
+    }
+
+    if (current instanceof Response) {
+      return current.status;
+    }
+
+    current = "cause" in current ? current.cause : undefined;
+  }
+
+  return undefined;
 }
 
 function deterministicAnswerStream(input: {

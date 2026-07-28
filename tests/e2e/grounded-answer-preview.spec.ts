@@ -170,8 +170,13 @@ test("技术故障保留问题并允许成功重试且不重复显示回答", as
         ? [
             {
               type: "temporary_failure",
+              reason: "rate_limited",
               message: "供应商服务暂时不可用，请稍后重试。",
               retryable: true,
+              contact: {
+                label: "联系业务团队",
+                url: "https://example.com/contact",
+              },
             },
           ]
         : [
@@ -202,6 +207,12 @@ test("技术故障保留问题并允许成功重试且不重复显示回答", as
   await expect(
     page.getByText("供应商服务暂时不可用，请稍后重试。", { exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByText("供应商限流", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "联系业务团队" }),
+  ).toHaveAttribute("href", "https://example.com/contact");
   await expect(page.getByLabel("预览问题")).toHaveValue(
     "你们提供什么服务？",
   );
@@ -258,10 +269,12 @@ test("回答正文只渲染受控 Markdown 并移除危险内容", async ({
     page.getByRole("heading", { name: "服务说明" }),
   ).toBeVisible();
   await expect(page.getByText("安全正文", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "官方网站" })).toHaveAttribute(
-    "href",
-    "https://example.com/safe",
-  );
+  await expect(page.getByRole("link", { name: "官方网站" })).toHaveCount(0);
+  await expect(
+    page
+      .getByLabel("助手后台预览")
+      .locator('[href="https://example.com/safe"]'),
+  ).toHaveCount(0);
   await expect(
     page
       .getByLabel("助手后台预览")

@@ -275,7 +275,17 @@ test("供应商失败会记录安全错误类型和追踪信息且不会保存�
           },
           candidateRepository: {
             async retrieve() {
-              return [];
+              return [
+                {
+                  id: "unit-a",
+                  knowledgeSourceId: "source-a",
+                  sourceTitle: "服务范围",
+                  sourceUrl: "https://example.com/services",
+                  heading: "知识整理",
+                  content: "演示组织提供知识整理服务。",
+                  similarity: 0.72,
+                },
+              ];
             },
           },
           rerankingProvider: {
@@ -347,77 +357,25 @@ test("供应商失败会记录安全错误类型和追踪信息且不会保存�
 });
 
 test("最终证据低于相关性门槛时可靠拒答且不调用回答模型", async () => {
+  const dependencies = createHappyPathDependencies();
   const events: GroundedAnswerEvent[] = [];
-  let answerProviderCalled = false;
+  dependencies.rerankingProvider.rerank = async () =>
+    providerResult(
+      [{ contentUnitId: "unit-a", score: 0.84 }],
+      "rerank-trace",
+      11,
+    );
+  dependencies.answerProvider.streamAnswer = () => {
+    assert.fail("证据低于门槛时不应调用回答模型");
+  };
 
   for await (const event of streamGroundedAnswer(
-    {
-      organizationId: "organization-1",
-      question: "你们在上海有办公室吗？",
-      assistant: {
-        name: "演示业务顾问",
-        serviceScope: "回答演示业务的服务范围与支持方式。",
-        tone: "professional",
-        humanContactLabel: "联系业务团队",
-        humanContactUrl: "https://example.com/contact",
-      },
-    },
-    {
-      questionEmbeddingProvider: {
-        provider: "siliconflow",
-        model: "BAAI/bge-m3",
-        async embed() {
-          return providerResult([0.1, 0.2], "embedding-trace", 7);
-        },
-      },
-      candidateRepository: {
-        async retrieve() {
-          return [
-            {
-              id: "unit-a",
-              knowledgeSourceId: "source-a",
-              sourceTitle: "服务范围",
-              sourceUrl: "https://example.com/services",
-              heading: "知识整理",
-              content: "演示组织提供知识整理服务。",
-              similarity: 0.72,
-            },
-          ];
-        },
-      },
-      rerankingProvider: {
-        provider: "siliconflow",
-        model: "BAAI/bge-reranker-v2-m3",
-        async rerank() {
-          return providerResult(
-            [{ contentUnitId: "unit-a", score: 0.84 }],
-            "rerank-trace",
-            11,
-          );
-        },
-      },
-      answerProvider: {
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-        streamAnswer() {
-          answerProviderCalled = true;
-          assert.fail("证据低于门槛时不应调用回答模型");
-        },
-      },
-      callLogger: {
-        async record() {},
-      },
-      config: {
-        candidateLimit: 20,
-        evidenceLimit: 5,
-        evidenceThreshold: 0.85,
-      },
-    },
+    happyPathInput(),
+    dependencies,
   )) {
     events.push(event);
   }
 
-  assert.equal(answerProviderCalled, false);
   assert.deepEqual(events, [
     {
       type: "refusal",
@@ -431,77 +389,18 @@ test("最终证据低于相关性门槛时可靠拒答且不调用回答模型",
 });
 
 test("最终证据恰好达到相关性门槛时生成有据回答", async () => {
+  const dependencies = createHappyPathDependencies();
   const events: GroundedAnswerEvent[] = [];
+  dependencies.rerankingProvider.rerank = async () =>
+    providerResult(
+      [{ contentUnitId: "unit-a", score: 0.85 }],
+      "rerank-trace",
+      11,
+    );
 
   for await (const event of streamGroundedAnswer(
-    {
-      organizationId: "organization-1",
-      question: "你们提供什么服务？",
-      assistant: {
-        name: "演示业务顾问",
-        serviceScope: "回答演示业务的服务范围与支持方式。",
-        tone: "professional",
-        humanContactLabel: "联系业务团队",
-        humanContactUrl: "https://example.com/contact",
-      },
-    },
-    {
-      questionEmbeddingProvider: {
-        provider: "siliconflow",
-        model: "BAAI/bge-m3",
-        async embed() {
-          return providerResult([0.1, 0.2], "embedding-trace", 7);
-        },
-      },
-      candidateRepository: {
-        async retrieve() {
-          return [
-            {
-              id: "unit-a",
-              knowledgeSourceId: "source-a",
-              sourceTitle: "服务范围",
-              sourceUrl: "https://example.com/services",
-              heading: "知识整理",
-              content: "演示组织提供知识整理服务。",
-              similarity: 0.72,
-            },
-          ];
-        },
-      },
-      rerankingProvider: {
-        provider: "siliconflow",
-        model: "BAAI/bge-reranker-v2-m3",
-        async rerank() {
-          return providerResult(
-            [{ contentUnitId: "unit-a", score: 0.85 }],
-            "rerank-trace",
-            11,
-          );
-        },
-      },
-      answerProvider: {
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-        streamAnswer() {
-          return {
-            textStream: chunks("我们提供知识整理服务。"),
-            metadata: Promise.resolve({
-              durationMs: 19,
-              tokens: { input: 9, output: 5, total: 14 },
-              traceId: "answer-trace",
-            }),
-          };
-        },
-      },
-      callLogger: {
-        async record() {},
-      },
-      config: {
-        candidateLimit: 20,
-        evidenceLimit: 5,
-        evidenceThreshold: 0.85,
-      },
-    },
+    happyPathInput(),
+    dependencies,
   )) {
     events.push(event);
   }
@@ -522,95 +421,36 @@ test("最终证据恰好达到相关性门槛时生成有据回答", async () =>
 });
 
 test("重排供应商限流时短暂退避一次并使用同一提供器重试", async () => {
+  const dependencies = createHappyPathDependencies();
   let rerankAttempts = 0;
   const waited: number[] = [];
   const events: GroundedAnswerEvent[] = [];
+  dependencies.rerankingProvider.rerank = async () => {
+    rerankAttempts += 1;
+    if (rerankAttempts === 1) {
+      throw new ProviderCallError("供应商限流", {
+        errorType: "rate_limit",
+        traceId: "rerank-rate-limit",
+        durationMs: 4,
+      });
+    }
+
+    return providerResult(
+      [{ contentUnitId: "unit-a", score: 0.91 }],
+      "rerank-retry",
+      8,
+    );
+  };
+  dependencies.rateLimitRetry = {
+    delayMs: 25,
+    async wait(delayMs) {
+      waited.push(delayMs);
+    },
+  };
 
   for await (const event of streamGroundedAnswer(
-    {
-      organizationId: "organization-1",
-      question: "你们提供什么服务？",
-      assistant: {
-        name: "演示业务顾问",
-        serviceScope: "回答演示业务的服务范围与支持方式。",
-        tone: "professional",
-        humanContactLabel: "联系业务团队",
-        humanContactUrl: "https://example.com/contact",
-      },
-    },
-    {
-      questionEmbeddingProvider: {
-        provider: "siliconflow",
-        model: "BAAI/bge-m3",
-        async embed() {
-          return providerResult([0.1, 0.2], "embedding-trace", 7);
-        },
-      },
-      candidateRepository: {
-        async retrieve() {
-          return [
-            {
-              id: "unit-a",
-              knowledgeSourceId: "source-a",
-              sourceTitle: "服务范围",
-              sourceUrl: "https://example.com/services",
-              heading: "知识整理",
-              content: "演示组织提供知识整理服务。",
-              similarity: 0.72,
-            },
-          ];
-        },
-      },
-      rerankingProvider: {
-        provider: "siliconflow",
-        model: "BAAI/bge-reranker-v2-m3",
-        async rerank() {
-          rerankAttempts += 1;
-          if (rerankAttempts === 1) {
-            throw new ProviderCallError("供应商限流", {
-              errorType: "rate_limit",
-              traceId: "rerank-rate-limit",
-              durationMs: 4,
-            });
-          }
-
-          return providerResult(
-            [{ contentUnitId: "unit-a", score: 0.91 }],
-            "rerank-retry",
-            8,
-          );
-        },
-      },
-      answerProvider: {
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-        streamAnswer() {
-          assert.equal(rerankAttempts, 2);
-          return {
-            textStream: chunks("我们提供知识整理服务。"),
-            metadata: Promise.resolve({
-              durationMs: 19,
-              tokens: { input: 9, output: 5, total: 14 },
-              traceId: "answer-trace",
-            }),
-          };
-        },
-      },
-      callLogger: {
-        async record() {},
-      },
-      rateLimitRetry: {
-        delayMs: 25,
-        async wait(delayMs) {
-          waited.push(delayMs);
-        },
-      },
-      config: {
-        candidateLimit: 20,
-        evidenceLimit: 5,
-        evidenceThreshold: 0.85,
-      },
-    },
+    happyPathInput(),
+    dependencies,
   )) {
     events.push(event);
   }
@@ -621,104 +461,49 @@ test("重排供应商限流时短暂退避一次并使用同一提供器重试",
 });
 
 test("回答生成在输出正文前遇到限流时只退避重试一次", async () => {
+  const dependencies = createHappyPathDependencies();
   let answerAttempts = 0;
   const waited: number[] = [];
   const events: GroundedAnswerEvent[] = [];
+  dependencies.answerProvider.streamAnswer = () => {
+    answerAttempts += 1;
+
+    if (answerAttempts === 1) {
+      return {
+        textStream: (async function* () {
+          throw new ProviderCallError("回答生成限流", {
+            errorType: "rate_limit",
+            traceId: "answer-rate-limit",
+            durationMs: 5,
+          });
+        })(),
+        metadata: Promise.resolve({
+          durationMs: 5,
+          tokens: { input: 0, output: 0, total: 0 },
+          traceId: "unused-answer-metadata",
+        }),
+      };
+    }
+
+    return {
+      textStream: chunks("我们提供知识整理服务。"),
+      metadata: Promise.resolve({
+        durationMs: 19,
+        tokens: { input: 9, output: 5, total: 14 },
+        traceId: "answer-retry",
+      }),
+    };
+  };
+  dependencies.rateLimitRetry = {
+    delayMs: 25,
+    async wait(delayMs) {
+      waited.push(delayMs);
+    },
+  };
 
   for await (const event of streamGroundedAnswer(
-    {
-      organizationId: "organization-1",
-      question: "你们提供什么服务？",
-      assistant: {
-        name: "演示业务顾问",
-        serviceScope: "回答演示业务的服务范围与支持方式。",
-        tone: "professional",
-        humanContactLabel: "联系业务团队",
-        humanContactUrl: "https://example.com/contact",
-      },
-    },
-    {
-      questionEmbeddingProvider: {
-        provider: "siliconflow",
-        model: "BAAI/bge-m3",
-        async embed() {
-          return providerResult([0.1, 0.2], "embedding-trace", 7);
-        },
-      },
-      candidateRepository: {
-        async retrieve() {
-          return [
-            {
-              id: "unit-a",
-              knowledgeSourceId: "source-a",
-              sourceTitle: "服务范围",
-              sourceUrl: "https://example.com/services",
-              heading: "知识整理",
-              content: "演示组织提供知识整理服务。",
-              similarity: 0.72,
-            },
-          ];
-        },
-      },
-      rerankingProvider: {
-        provider: "siliconflow",
-        model: "BAAI/bge-reranker-v2-m3",
-        async rerank() {
-          return providerResult(
-            [{ contentUnitId: "unit-a", score: 0.91 }],
-            "rerank-trace",
-            11,
-          );
-        },
-      },
-      answerProvider: {
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-        streamAnswer() {
-          answerAttempts += 1;
-
-          if (answerAttempts === 1) {
-            return {
-              textStream: (async function* () {
-                throw new ProviderCallError("回答生成限流", {
-                  errorType: "rate_limit",
-                  traceId: "answer-rate-limit",
-                  durationMs: 5,
-                });
-              })(),
-              metadata: Promise.resolve({
-                durationMs: 5,
-                tokens: { input: 0, output: 0, total: 0 },
-                traceId: "unused-answer-metadata",
-              }),
-            };
-          }
-
-          return {
-            textStream: chunks("我们提供知识整理服务。"),
-            metadata: Promise.resolve({
-              durationMs: 19,
-              tokens: { input: 9, output: 5, total: 14 },
-              traceId: "answer-retry",
-            }),
-          };
-        },
-      },
-      callLogger: {
-        async record() {},
-      },
-      rateLimitRetry: {
-        delayMs: 25,
-        async wait(delayMs) {
-          waited.push(delayMs);
-        },
-      },
-      config: {
-        candidateLimit: 20,
-        evidenceLimit: 5,
-        evidenceThreshold: 0.85,
-      },
-    },
+    happyPathInput(),
+    dependencies,
   )) {
     events.push(event);
   }
@@ -755,6 +540,33 @@ test("向量超时作为技术故障抛出且不会进入重排或可靠拒答",
       error.errorType === "timeout" &&
       error.traceId === "embedding-timeout",
   );
+});
+
+test("召回没有候选内容单元时直接可靠拒答而不请求重排", async () => {
+  const dependencies = createHappyPathDependencies();
+  const events: GroundedAnswerEvent[] = [];
+  dependencies.candidateRepository.retrieve = async () => [];
+  dependencies.rerankingProvider.rerank = async () => {
+    assert.fail("没有候选内容单元时不应向重排供应商发送空列表");
+  };
+
+  for await (const event of streamGroundedAnswer(
+    happyPathInput(),
+    dependencies,
+  )) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [
+    {
+      type: "refusal",
+      message: "当前可用知识不足以支持这个问题的事实性回答。",
+      contact: {
+        label: "联系业务团队",
+        url: "https://example.com/contact",
+      },
+    },
+  ]);
 });
 
 test("重排无效响应作为技术故障抛出且不会调用回答模型", async () => {

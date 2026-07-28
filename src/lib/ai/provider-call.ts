@@ -13,8 +13,18 @@ export type ProviderCallResult<T> = {
 
 export type ProviderCallMetadata = Omit<ProviderCallResult<never>, "value">;
 
+export type ProviderErrorType =
+  | "configuration"
+  | "timeout"
+  | "network"
+  | "rate_limit"
+  | "input_rejected"
+  | "provider_http"
+  | "invalid_response"
+  | "unknown";
+
 export class ProviderCallError extends Error {
-  readonly errorType: string;
+  readonly errorType: ProviderErrorType;
   readonly traceId: string;
   readonly durationMs: number;
   readonly tokens: ProviderTokens;
@@ -22,7 +32,7 @@ export class ProviderCallError extends Error {
   constructor(
     message: string,
     metadata: {
-      errorType: string;
+      errorType: ProviderErrorType;
       traceId: string;
       durationMs: number;
       tokens?: ProviderTokens;
@@ -47,7 +57,7 @@ export function elapsedMilliseconds(startedAt: number) {
 
 export function createProviderCallError(
   message: string,
-  errorType: string,
+  errorType: ProviderErrorType,
   traceId: string,
   startedAt: number,
 ) {
@@ -63,9 +73,10 @@ export function createProviderRequestError(
   error: unknown,
   traceId: string,
   startedAt: number,
-  errorType = error instanceof DOMException && error.name === "TimeoutError"
-    ? "timeout"
-    : "network",
+  errorType: ProviderErrorType =
+    error instanceof DOMException && error.name === "TimeoutError"
+      ? "timeout"
+      : "network",
 ) {
   if (error instanceof ProviderCallError) {
     return error;

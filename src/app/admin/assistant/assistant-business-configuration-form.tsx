@@ -57,6 +57,7 @@ type PreviewResult = {
   answer: string;
   citations: GroundedCitation[];
   message?: string;
+  failureReason?: "input_rejected" | "rate_limited" | "provider_failure";
   contact?: {
     label: string;
     url: string;
@@ -82,8 +83,13 @@ type PreviewStreamEvent =
     }
   | {
       type: "temporary_failure";
+      reason: "input_rejected" | "rate_limited" | "provider_failure";
       message: string;
       retryable: true;
+      contact: {
+        label: string;
+        url: string;
+      };
     };
 
 const toneOptions: Array<{
@@ -472,7 +478,9 @@ function AssistantPreview({
         setResult((current) => ({
           ...current,
           status: "temporary_failure",
+          failureReason: streamEvent.reason,
           message: streamEvent.message,
+          contact: streamEvent.contact,
         }));
       });
     } catch (error) {
@@ -483,10 +491,15 @@ function AssistantPreview({
       setResult((current) => ({
         ...current,
         status: "temporary_failure",
+        failureReason: "provider_failure",
         message:
           error instanceof Error
             ? error.message
             : "暂时无法完成预览，请稍后重试。",
+        contact: {
+          label: values.humanContactLabel,
+          url: values.humanContactUrl,
+        },
       }));
     } finally {
       if (requestController.current === controller) {
@@ -565,21 +578,37 @@ function AssistantPreview({
                 >
                   {result.status === "temporary_failure" ? (
                     <>
-                      <p className="text-[13px] font-medium text-danger">
-                        服务暂时不可用
-                      </p>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[13px] font-medium text-danger">
+                          服务暂时不可用
+                        </p>
+                        <span className="mono rounded-full border border-danger/25 bg-card px-2 py-0.5 text-[10px] font-semibold text-danger">
+                          {temporaryFailureLabel(result.failureReason)}
+                        </span>
+                      </div>
                       <p className="mt-1 text-[13px] leading-6 text-ink-600">
                         {result.message}
                       </p>
-                      <Button
-                        className="mt-3"
-                        onClick={() => void requestPreview(result.question)}
-                        size="compact"
-                        type="button"
-                        variant="secondary"
-                      >
-                        重试预览
-                      </Button>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          onClick={() => void requestPreview(result.question)}
+                          type="button"
+                          variant="secondary"
+                        >
+                          重试预览
+                        </Button>
+                        {result.contact ? (
+                          <Button asChild variant="secondary">
+                            <a
+                              href={result.contact.url}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {result.contact.label}
+                            </a>
+                          </Button>
+                        ) : null}
+                      </div>
                     </>
                   ) : result.status === "refusal" ? (
                     <>
@@ -667,6 +696,14 @@ function AssistantPreview({
       </div>
     </aside>
   );
+}
+
+function temporaryFailureLabel(reason: PreviewResult["failureReason"]) {
+  return {
+    input_rejected: "输入被拒绝",
+    rate_limited: "供应商限流",
+    provider_failure: "供应商故障",
+  }[reason ?? "provider_failure"];
 }
 
 function CitationList({ citations }: { citations: GroundedCitation[] }) {

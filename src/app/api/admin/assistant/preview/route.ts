@@ -46,6 +46,10 @@ export async function POST(request: Request) {
       },
       createSupabaseGroundedAnswerDependencies(supabase),
     ),
+    {
+      label: assistant.human_contact_label,
+      url: assistant.human_contact_url,
+    },
   );
 }
 

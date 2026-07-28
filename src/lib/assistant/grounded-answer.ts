@@ -2,6 +2,7 @@ import {
   ProviderCallError,
   type ProviderCallMetadata,
   type ProviderCallResult,
+  type ProviderErrorType,
 } from "../ai/provider-call.ts";
 
 export { ProviderCallError } from "../ai/provider-call.ts";
@@ -55,7 +56,7 @@ export type AiCallLog = {
   totalTokens: number;
   durationMs: number;
   outcome: "success" | "error";
-  errorType: string | null;
+  errorType: ProviderErrorType | null;
   traceId: string;
 };
 
@@ -142,6 +143,12 @@ export async function* streamGroundedAnswer(
     embeddingResult.value,
     dependencies.config.candidateLimit,
   );
+
+  if (candidates.length === 0) {
+    yield createGroundedRefusal(input.assistant);
+    return;
+  }
+
   const rerankingResult = await runLoggedProviderCall(
     input.organizationId,
     "rerank",
@@ -172,14 +179,7 @@ export async function* streamGroundedAnswer(
     });
 
   if (evidence.length === 0) {
-    yield {
-      type: "refusal",
-      message: "当前可用知识不足以支持这个问题的事实性回答。",
-      contact: {
-        label: input.assistant.humanContactLabel,
-        url: input.assistant.humanContactUrl,
-      },
-    };
+    yield createGroundedRefusal(input.assistant);
     return;
   }
 
@@ -225,15 +225,13 @@ export async function* streamGroundedAnswer(
       );
 
       if (
-        attempt === 0 &&
-        !emittedText &&
-        error instanceof ProviderCallError &&
-        error.errorType === "rate_limit" &&
-        dependencies.rateLimitRetry
+        await waitForRateLimitRetry(
+          error,
+          attempt,
+          dependencies.rateLimitRetry,
+          !emittedText,
+        )
       ) {
-        await dependencies.rateLimitRetry.wait(
-          dependencies.rateLimitRetry.delayMs,
-        );
         continue;
       }
 
@@ -248,6 +246,19 @@ export async function* streamGroundedAnswer(
   yield {
     type: "complete",
     citations: createCitations(evidence),
+  };
+}
+
+function createGroundedRefusal(
+  assistant: GroundedAnswerInput["assistant"],
+): GroundedAnswerEvent {
+  return {
+    type: "refusal",
+    message: "当前可用知识不足以支持这个问题的事实性回答。",
+    contact: {
+      label: assistant.humanContactLabel,
+      url: assistant.humanContactUrl,
+    },
   };
 }
 
@@ -334,13 +345,7 @@ async function runLoggedProviderCall<T>(
         callLogger,
       );
 
-      if (
-        attempt === 0 &&
-        error instanceof ProviderCallError &&
-        error.errorType === "rate_limit" &&
-        rateLimitRetry
-      ) {
-        await rateLimitRetry.wait(rateLimitRetry.delayMs);
+      if (await waitForRateLimitRetry(error, attempt, rateLimitRetry)) {
         continue;
       }
 
@@ -349,6 +354,26 @@ async function runLoggedProviderCall<T>(
   }
 
   throw new Error("供应商调用重试状态无效");
+}
+
+async function waitForRateLimitRetry(
+  error: unknown,
+  attempt: number,
+  retry: GroundedAnswerDependencies["rateLimitRetry"],
+  safeToRetry = true,
+) {
+  if (
+    attempt !== 0 ||
+    !safeToRetry ||
+    !(error instanceof ProviderCallError) ||
+    error.errorType !== "rate_limit" ||
+    !retry
+  ) {
+    return false;
+  }
+
+  await retry.wait(retry.delayMs);
+  return true;
 }
 
 async function recordFailedCall(
@@ -363,7 +388,7 @@ async function recordFailedCall(
       ? error
       : {
           durationMs: 0,
-          errorType: "unknown",
+          errorType: "unknown" as const,
           tokens: { input: 0, output: 0, total: 0 },
           traceId: crypto.randomUUID(),
         };

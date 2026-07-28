@@ -6,8 +6,8 @@ import {
   elapsedMilliseconds,
   safeTokenCount,
   type ProviderCallResult,
-} from "@/lib/ai/provider-call";
-import type { EmbeddingProvider } from "@/lib/knowledge/process-revision";
+} from "./provider-call.ts";
+import type { EmbeddingProvider } from "../knowledge/process-revision.ts";
 
 const EMBEDDING_DIMENSIONS = 1024;
 const DEFAULT_SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
@@ -128,7 +128,11 @@ export function getKnowledgeEmbeddingProviderWithMetadata() {
           `向量服务返回 HTTP ${response.status}`,
           {
             errorType:
-              response.status === 429 ? "rate_limit" : "provider_http",
+              response.status === 429
+                ? "rate_limit"
+                : response.status === 400 || response.status === 422
+                  ? "input_rejected"
+                  : "provider_http",
             traceId,
             durationMs: elapsedMilliseconds(startedAt),
           },

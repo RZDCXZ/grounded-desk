@@ -13,7 +13,6 @@ const allowedElements = [
   "blockquote",
   "code",
   "pre",
-  "a",
   "br",
 ];
 
@@ -60,37 +59,10 @@ export function ControlledMarkdown({ children }: { children: string }) {
             {code}
           </pre>
         ),
-        a: ({ children: label, href }) =>
-          href ? (
-            <a
-              className="font-medium text-forest-800 underline decoration-forest-800/35 underline-offset-2 hover:decoration-forest-800"
-              href={href}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {label}
-            </a>
-          ) : null,
       }}
       skipHtml
-      urlTransform={allowSafeLink}
     >
       {children}
     </Markdown>
   );
-}
-
-function allowSafeLink(url: string, key: string) {
-  if (key !== "href") {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "http:" || parsed.protocol === "https:"
-      ? url
-      : null;
-  } catch {
-    return null;
-  }
 }
