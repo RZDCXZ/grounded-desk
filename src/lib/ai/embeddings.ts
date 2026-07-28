@@ -1,5 +1,12 @@
 import "server-only";
 
+import {
+  ProviderCallError,
+  createProviderRequestError as createEmbeddingCallError,
+  elapsedMilliseconds,
+  safeTokenCount,
+  type ProviderCallResult,
+} from "@/lib/ai/provider-call";
 import type { EmbeddingProvider } from "@/lib/knowledge/process-revision";
 
 const EMBEDDING_DIMENSIONS = 1024;
@@ -12,67 +19,174 @@ type SiliconFlowEmbeddingResponse = {
     index?: number;
     embedding?: unknown;
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    total_tokens?: number;
+  };
 };
 
 export function getKnowledgeEmbeddingProvider(): EmbeddingProvider {
-  if (process.env.DETERMINISTIC_EMBEDDINGS === "true") {
-    return {
-      async embed(texts) {
-        if (process.env.NODE_ENV === "production") {
-          throw new Error("生产环境禁止使用确定性向量提供器");
-        }
-
-        return texts.map(createDeterministicEmbedding);
-      },
-    };
-  }
+  const provider = getKnowledgeEmbeddingProviderWithMetadata();
 
   return {
     async embed(texts) {
+      return (await provider.embed(texts)).value;
+    },
+  };
+}
+
+export function getKnowledgeEmbeddingProviderWithMetadata() {
+  const model =
+    process.env.SILICONFLOW_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
+
+  return {
+    provider: "siliconflow",
+    model,
+    async embed(
+      texts: string[],
+    ): Promise<ProviderCallResult<number[][]>> {
+      const startedAt = performance.now();
+      const fallbackTraceId = crypto.randomUUID();
+
+      if (process.env.DETERMINISTIC_EMBEDDINGS === "true") {
+        if (process.env.NODE_ENV === "production") {
+          throw new ProviderCallError("生产环境禁止使用确定性向量提供器", {
+            errorType: "configuration",
+            traceId: fallbackTraceId,
+            durationMs: elapsedMilliseconds(startedAt),
+          });
+        }
+
+        const inputTokens = texts.reduce(
+          (total, text) => total + Array.from(text).length,
+          0,
+        );
+
+        return {
+          value: texts.map(createDeterministicEmbedding),
+          durationMs: elapsedMilliseconds(startedAt),
+          tokens: {
+            input: inputTokens,
+            output: 0,
+            total: inputTokens,
+          },
+          traceId: fallbackTraceId,
+        };
+      }
+
       const apiKey = process.env.SILICONFLOW_API_KEY;
 
       if (!apiKey) {
-        throw new Error("缺少服务端环境变量 SILICONFLOW_API_KEY");
+        throw new ProviderCallError(
+          "缺少服务端环境变量 SILICONFLOW_API_KEY",
+          {
+            errorType: "configuration",
+            traceId: fallbackTraceId,
+            durationMs: elapsedMilliseconds(startedAt),
+          },
+        );
       }
 
       const baseUrl = (
         process.env.SILICONFLOW_BASE_URL ?? DEFAULT_SILICONFLOW_BASE_URL
       ).replace(/\/$/, "");
-      const model =
-        process.env.SILICONFLOW_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
       const timeout = Number(
         process.env.SILICONFLOW_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MILLISECONDS,
       );
-      const response = await fetch(`${baseUrl}/embeddings`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          input: texts,
-          encoding_format: "float",
-        }),
-        signal: AbortSignal.timeout(
-          Number.isFinite(timeout) ? timeout : DEFAULT_TIMEOUT_MILLISECONDS,
-        ),
-      });
+      let response: Response;
 
-      if (!response.ok) {
-        throw new Error(`向量服务返回 HTTP ${response.status}`);
+      try {
+        response = await fetch(`${baseUrl}/embeddings`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            input: texts,
+            encoding_format: "float",
+          }),
+          signal: AbortSignal.timeout(
+            Number.isFinite(timeout) ? timeout : DEFAULT_TIMEOUT_MILLISECONDS,
+          ),
+        });
+      } catch (error) {
+        throw createEmbeddingCallError(
+          "向量服务请求失败",
+          error,
+          fallbackTraceId,
+          startedAt,
+        );
       }
 
-      const payload = (await response.json()) as SiliconFlowEmbeddingResponse;
+      const traceId =
+        response.headers.get("x-siliconcloud-trace-id") ?? fallbackTraceId;
+
+      if (!response.ok) {
+        throw new ProviderCallError(
+          `向量服务返回 HTTP ${response.status}`,
+          {
+            errorType:
+              response.status === 429 ? "rate_limit" : "provider_http",
+            traceId,
+            durationMs: elapsedMilliseconds(startedAt),
+          },
+        );
+      }
+
+      let payload: SiliconFlowEmbeddingResponse;
+
+      try {
+        payload = (await response.json()) as SiliconFlowEmbeddingResponse;
+      } catch (error) {
+        throw createEmbeddingCallError(
+          "向量服务返回无效响应",
+          error,
+          traceId,
+          startedAt,
+          "invalid_response",
+        );
+      }
+
       const ordered = [...(payload.data ?? [])].sort(
         (left, right) => (left.index ?? 0) - (right.index ?? 0),
       );
 
       if (ordered.length !== texts.length) {
-        throw new Error("向量服务返回数量不一致");
+        throw new ProviderCallError("向量服务返回数量不一致", {
+          errorType: "invalid_response",
+          traceId,
+          durationMs: elapsedMilliseconds(startedAt),
+        });
       }
 
-      return ordered.map(({ embedding }) => validateEmbedding(embedding));
+      const inputTokens = safeTokenCount(payload.usage?.prompt_tokens);
+      const totalTokens = Math.max(
+        inputTokens,
+        safeTokenCount(payload.usage?.total_tokens),
+      );
+
+      try {
+        return {
+          value: ordered.map(({ embedding }) => validateEmbedding(embedding)),
+          durationMs: elapsedMilliseconds(startedAt),
+          tokens: {
+            input: inputTokens,
+            output: 0,
+            total: totalTokens,
+          },
+          traceId,
+        };
+      } catch (error) {
+        throw createEmbeddingCallError(
+          "向量服务返回无效向量",
+          error,
+          traceId,
+          startedAt,
+          "invalid_response",
+        );
+      }
     },
   };
 }

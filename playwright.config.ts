@@ -23,7 +23,7 @@ export default defineConfig({
     },
     {
       command:
-        "ALLOW_PRIVATE_WEB_SOURCES=true DETERMINISTIC_EMBEDDINGS=true E2E_KNOWLEDGE_PROCESSING_DELAY_MS=500 node_modules/.bin/next dev",
+        "ALLOW_PRIVATE_WEB_SOURCES=true DETERMINISTIC_EMBEDDINGS=true DETERMINISTIC_AI=true E2E_KNOWLEDGE_PROCESSING_DELAY_MS=500 node_modules/.bin/next dev",
       url: "http://127.0.0.1:3000",
       reuseExistingServer: false,
       timeout: 120_000,

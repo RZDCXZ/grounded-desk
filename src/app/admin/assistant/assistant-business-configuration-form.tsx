@@ -3,12 +3,20 @@
 import {
   CheckCircle2,
   ExternalLink,
+  FileText,
   Info,
   MessageCircle,
+  Send,
   ShieldCheck,
   UserCog,
 } from "lucide-react";
-import { useActionState, useState } from "react";
+import {
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatusBadge, type Status } from "@/components/admin/status-badge";
@@ -20,14 +28,15 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
   type AssistantBusinessConfigurationActionState,
   type AssistantBusinessConfigurationRecord,
   type AssistantBusinessConfigurationValues,
   type AssistantTone,
-  isAllowedHumanContactUrl,
 } from "@/lib/assistant/business-configuration";
+import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
 import { cn } from "@/lib/utils";
 
 import { updateAssistantBusinessConfiguration } from "./actions";
@@ -35,6 +44,28 @@ import { updateAssistantBusinessConfiguration } from "./actions";
 const initialActionState: AssistantBusinessConfigurationActionState = {
   status: "idle",
 };
+
+type PreviewResult = {
+  status: "idle" | "streaming" | "complete" | "error";
+  question: string;
+  answer: string;
+  citations: GroundedCitation[];
+  message?: string;
+};
+
+type PreviewStreamEvent =
+  | {
+      type: "text_delta";
+      delta: string;
+    }
+  | {
+      type: "complete";
+      citations: GroundedCitation[];
+    }
+  | {
+      type: "error";
+      message: string;
+    };
 
 const toneOptions: Array<{
   value: AssistantTone;
@@ -337,11 +368,97 @@ function AssistantPreview({
   status: Extract<Status, "draft" | "published" | "offline">;
   values: AssistantBusinessConfigurationValues;
 }) {
-  const contactUrlIsAllowed = isAllowedHumanContactUrl(
-    values.humanContactUrl.trim(),
-  );
   const toneLabel =
     toneOptions.find(({ value }) => value === values.tone)?.label ?? "未选择";
+  const [question, setQuestion] = useState("");
+  const [result, setResult] = useState<PreviewResult>({
+    status: "idle",
+    question: "",
+    answer: "",
+    citations: [],
+  });
+  const requestController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      requestController.current?.abort();
+    };
+  }, []);
+
+  async function submitPreviewQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedQuestion = question.trim();
+
+    if (!normalizedQuestion || result.status === "streaming") {
+      return;
+    }
+
+    const controller = new AbortController();
+    requestController.current?.abort();
+    requestController.current = controller;
+    setResult({
+      status: "streaming",
+      question: normalizedQuestion,
+      answer: "",
+      citations: [],
+    });
+
+    try {
+      const response = await fetch("/api/admin/assistant/preview", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ question: normalizedQuestion }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        const payload = (await response.json().catch(() => null)) as {
+          message?: string;
+        } | null;
+        throw new Error(payload?.message ?? "暂时无法完成预览，请稍后重试。");
+      }
+
+      await consumePreviewStream(response.body, (streamEvent) => {
+        if (streamEvent.type === "text_delta") {
+          setResult((current) => ({
+            ...current,
+            answer: current.answer + streamEvent.delta,
+          }));
+          return;
+        }
+
+        if (streamEvent.type === "complete") {
+          setResult((current) => ({
+            ...current,
+            status: "complete",
+            citations: streamEvent.citations,
+          }));
+          return;
+        }
+
+        throw new Error(streamEvent.message);
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      setResult((current) => ({
+        ...current,
+        status: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "暂时无法完成预览，请稍后重试。",
+      }));
+    } finally {
+      if (requestController.current === controller) {
+        requestController.current = null;
+      }
+    }
+  }
 
   return (
     <aside className="xl:col-span-5" aria-label="助手后台预览">
@@ -350,7 +467,7 @@ function AssistantPreview({
           <div>
             <p className="text-sm font-medium">后台预览</p>
             <p className="mt-0.5 text-[11px] text-ink-600">
-              输入内容会在此实时更新
+              使用已保存配置与当前可用知识
             </p>
           </div>
           <StatusBadge status={status} />
@@ -369,7 +486,10 @@ function AssistantPreview({
             </div>
           </div>
 
-          <div className="min-h-118 space-y-5 bg-paper/70 p-5">
+          <div
+            aria-live="polite"
+            className="min-h-118 space-y-5 bg-paper/70 p-5"
+          >
             <div className="flex items-start gap-3">
               <AssistantIdentityMark />
               <div className="rounded-xl rounded-tl-sm border border-line bg-card p-4 text-sm leading-6">
@@ -377,41 +497,101 @@ function AssistantPreview({
               </div>
             </div>
 
-            <div className="rounded-lg border border-line bg-card p-4">
-              <p className="text-[11px] font-semibold text-ink-600">
-                可服务范围
-              </p>
-              <p className="mt-2 text-[13px] leading-6">
-                {values.serviceScope.trim() ||
-                  "服务范围说明会帮助访客了解可咨询内容。"}
-              </p>
-            </div>
+            {result.question ? (
+              <div className="flex justify-end">
+                <div className="max-w-[85%] rounded-xl rounded-tr-sm bg-forest-800 px-4 py-3 text-sm leading-6 text-white">
+                  {result.question}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-line bg-card p-4">
+                <p className="text-[11px] font-semibold text-ink-600">
+                  可服务范围
+                </p>
+                <p className="mt-2 text-[13px] leading-6">
+                  {values.serviceScope.trim() ||
+                    "服务范围说明会帮助访客了解可咨询内容。"}
+                </p>
+              </div>
+            )}
 
-            <div className="rounded-lg border border-warning/30 bg-warning-light p-4">
-              <p className="text-[13px] leading-6">
-                如果现有内容暂时无法确认，访客可以继续联系人工。
-              </p>
-              {contactUrlIsAllowed ? (
-                <a
-                  className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg border border-line-strong bg-card px-4 text-[13px] font-medium text-forest-800 hover:bg-paper"
-                  href={values.humanContactUrl.trim()}
-                  rel="noreferrer"
-                  target={
-                    values.humanContactUrl.trim().startsWith("mailto:")
-                      ? undefined
-                      : "_blank"
-                  }
+            {result.status !== "idle" ? (
+              <div className="flex items-start gap-3">
+                <AssistantIdentityMark />
+                <div
+                  className={cn(
+                    "min-w-0 flex-1 rounded-xl rounded-tl-sm border bg-card p-4",
+                    result.status === "error"
+                      ? "border-danger/30 bg-danger-light"
+                      : "border-line",
+                  )}
                 >
-                  {values.humanContactLabel.trim() || "联系人工"}
-                  <ExternalLink aria-hidden="true" className="size-3.5" />
-                </a>
-              ) : (
-                <span className="mt-3 inline-flex h-10 items-center rounded-lg border border-line-strong bg-card px-4 text-[13px] font-medium text-ink-600">
-                  {values.humanContactLabel.trim() || "联系人工"}
-                </span>
-              )}
-            </div>
+                  {result.status === "error" ? (
+                    <>
+                      <p className="text-[13px] font-medium text-danger">
+                        暂时无法完成预览
+                      </p>
+                      <p className="mt-1 text-[13px] leading-6 text-ink-600">
+                        {result.message}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="whitespace-pre-wrap text-sm leading-6">
+                        {result.answer}
+                        {result.status === "streaming" ? (
+                          <Spinner
+                            className="ml-1 inline size-3 align-text-bottom text-forest-800"
+                            label="正在生成回答"
+                          />
+                        ) : null}
+                      </p>
+
+                      {result.status === "complete" ? (
+                        <CitationList citations={result.citations} />
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
+
+          <form
+            className="border-t border-line bg-card p-4"
+            onSubmit={submitPreviewQuestion}
+          >
+            <div className="flex items-center gap-2">
+              <label className="sr-only" htmlFor="assistant-preview-question">
+                预览问题
+              </label>
+              <Input
+                autoComplete="off"
+                className="bg-paper"
+                disabled={result.status === "streaming"}
+                id="assistant-preview-question"
+                maxLength={2000}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="输入一个有知识依据的问题"
+                value={question}
+              />
+              <Button
+                aria-label={
+                  result.status === "streaming" ? "正在生成回答" : "发送问题"
+                }
+                disabled={
+                  result.status === "streaming" || question.trim().length === 0
+                }
+                size="icon"
+                type="submit"
+              >
+                <Send aria-hidden="true" />
+              </Button>
+            </div>
+            <p className="mt-2 text-[11px] text-ink-600">
+              管理员预览不会创建访客会话。请勿提交敏感个人信息。
+            </p>
+          </form>
         </div>
 
         {status === "draft" ? (
@@ -422,6 +602,90 @@ function AssistantPreview({
       </div>
     </aside>
   );
+}
+
+function CitationList({ citations }: { citations: GroundedCitation[] }) {
+  return (
+    <div className="mt-4 border-t border-line pt-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-[11px] font-semibold text-ink-600">回答依据</p>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-success-light px-2 py-0.5 text-[10px] font-semibold text-success">
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-success" />
+          有依据
+        </span>
+      </div>
+      <div className="space-y-2">
+        {citations.map((citation) =>
+          citation.url ? (
+            <a
+              className="flex min-h-12 items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 text-forest-800 transition-colors hover:border-line-strong hover:bg-forest-100/40"
+              href={citation.url}
+              key={citation.knowledgeSourceId}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <FileText
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-ink-400"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[12px] font-medium">
+                  {citation.title}
+                </span>
+                <span className="mono mt-0.5 block truncate text-[10px] text-ink-600">
+                  {citation.url}
+                </span>
+              </span>
+              <ExternalLink
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-ink-400"
+              />
+            </a>
+          ) : (
+            <div
+              className="flex min-h-10 items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 text-[12px] text-ink-600"
+              key={citation.knowledgeSourceId}
+            >
+              <FileText
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-ink-400"
+              />
+              <span className="min-w-0 flex-1 truncate">{citation.title}</span>
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+async function consumePreviewStream(
+  stream: ReadableStream<Uint8Array>,
+  onEvent: (event: PreviewStreamEvent) => void,
+) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.trim()) {
+        onEvent(JSON.parse(line) as PreviewStreamEvent);
+      }
+    }
+
+    if (done) {
+      if (buffer.trim()) {
+        onEvent(JSON.parse(buffer) as PreviewStreamEvent);
+      }
+      return;
+    }
+  }
 }
 
 function AssistantIdentityMark({ size = "default" }: { size?: "default" | "large" }) {
