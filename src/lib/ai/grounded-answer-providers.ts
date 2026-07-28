@@ -1,7 +1,13 @@
 import "server-only";
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { streamText } from "ai";
+import {
+  APICallError,
+  EmptyResponseBodyError,
+  InvalidResponseDataError,
+  JSONParseError,
+  streamText,
+} from "ai";
 
 import {
   createProviderCallError as providerError,
@@ -279,6 +285,7 @@ export function getGroundedAnswerGenerationProvider() {
               error,
               traceId,
               startedAt,
+              classifyAnswerProviderError(error),
             );
           }
         })(),
@@ -286,6 +293,35 @@ export function getGroundedAnswerGenerationProvider() {
       };
     },
   };
+}
+
+function classifyAnswerProviderError(error: unknown) {
+  if (APICallError.isInstance(error)) {
+    if (error.statusCode === 429) {
+      return "rate_limit";
+    }
+
+    if (error.statusCode === 408) {
+      return "timeout";
+    }
+  }
+
+  if (
+    InvalidResponseDataError.isInstance(error) ||
+    EmptyResponseBodyError.isInstance(error) ||
+    JSONParseError.isInstance(error)
+  ) {
+    return "invalid_response";
+  }
+
+  if (
+    error instanceof DOMException &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  ) {
+    return "timeout";
+  }
+
+  return "network";
 }
 
 function deterministicAnswerStream(input: {

@@ -33,6 +33,14 @@ export type GroundedAnswerEvent =
       delta: string;
     }
   | {
+      type: "refusal";
+      message: string;
+      contact: {
+        label: string;
+        url: string;
+      };
+    }
+  | {
       type: "complete";
       citations: GroundedCitation[];
     };
@@ -93,6 +101,10 @@ type GroundedAnswerDependencies = {
   callLogger: {
     record(log: AiCallLog): Promise<void>;
   };
+  rateLimitRetry?: {
+    delayMs: number;
+    wait(delayMs: number): Promise<void>;
+  };
   config: {
     candidateLimit: number;
     evidenceLimit: number;
@@ -107,6 +119,8 @@ type GroundedAnswerInput = {
     name: string;
     serviceScope: string;
     tone: string;
+    humanContactLabel: string;
+    humanContactUrl: string;
   };
 };
 
@@ -120,6 +134,7 @@ export async function* streamGroundedAnswer(
     dependencies.questionEmbeddingProvider,
     dependencies.callLogger,
     () => dependencies.questionEmbeddingProvider.embed(input.question),
+    dependencies.rateLimitRetry,
   );
 
   const candidates = await dependencies.candidateRepository.retrieve(
@@ -133,6 +148,7 @@ export async function* streamGroundedAnswer(
     dependencies.rerankingProvider,
     dependencies.callLogger,
     () => dependencies.rerankingProvider.rerank(input.question, candidates),
+    dependencies.rateLimitRetry,
   );
 
   const candidatesById = new Map(
@@ -156,46 +172,78 @@ export async function* streamGroundedAnswer(
     });
 
   if (evidence.length === 0) {
-    throw new Error("现有知识不足以形成有据回答");
+    yield {
+      type: "refusal",
+      message: "当前可用知识不足以支持这个问题的事实性回答。",
+      contact: {
+        label: input.assistant.humanContactLabel,
+        url: input.assistant.humanContactUrl,
+      },
+    };
+    return;
   }
 
-  let answerMetadata: ProviderCallMetadata;
+  let answerCompleted = false;
 
-  try {
-    const answerResult = dependencies.answerProvider.streamAnswer({
-      question: input.question,
-      assistant: input.assistant,
-      evidence,
-    });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let emittedText = false;
 
-    for await (const delta of answerResult.textStream) {
-      if (delta) {
-        yield {
-          type: "text_delta",
-          delta,
-        };
+    try {
+      const answerResult = dependencies.answerProvider.streamAnswer({
+        question: input.question,
+        assistant: input.assistant,
+        evidence,
+      });
+
+      for await (const delta of answerResult.textStream) {
+        if (delta) {
+          emittedText = true;
+          yield {
+            type: "text_delta",
+            delta,
+          };
+        }
       }
-    }
 
-    answerMetadata = await answerResult.metadata;
-  } catch (error) {
-    await recordFailedCall(
-      input.organizationId,
-      "answer",
-      dependencies.answerProvider,
-      error,
-      dependencies.callLogger,
-    );
-    throw error;
+      const answerMetadata = await answerResult.metadata;
+      await recordSuccessfulCall(
+        input.organizationId,
+        "answer",
+        dependencies.answerProvider,
+        answerMetadata,
+        dependencies.callLogger,
+      );
+      answerCompleted = true;
+      break;
+    } catch (error) {
+      await recordFailedCall(
+        input.organizationId,
+        "answer",
+        dependencies.answerProvider,
+        error,
+        dependencies.callLogger,
+      );
+
+      if (
+        attempt === 0 &&
+        !emittedText &&
+        error instanceof ProviderCallError &&
+        error.errorType === "rate_limit" &&
+        dependencies.rateLimitRetry
+      ) {
+        await dependencies.rateLimitRetry.wait(
+          dependencies.rateLimitRetry.delayMs,
+        );
+        continue;
+      }
+
+      throw error;
+    }
   }
 
-  await recordSuccessfulCall(
-    input.organizationId,
-    "answer",
-    dependencies.answerProvider,
-    answerMetadata,
-    dependencies.callLogger,
-  );
+  if (!answerCompleted) {
+    throw new Error("回答生成重试状态无效");
+  }
 
   yield {
     type: "complete",
@@ -264,30 +312,43 @@ async function runLoggedProviderCall<T>(
   identity: ProviderIdentity,
   callLogger: GroundedAnswerDependencies["callLogger"],
   operation: () => Promise<ProviderCallResult<T>>,
+  rateLimitRetry?: GroundedAnswerDependencies["rateLimitRetry"],
 ) {
-  let result: ProviderCallResult<T>;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await operation();
+      await recordSuccessfulCall(
+        organizationId,
+        callType,
+        identity,
+        result,
+        callLogger,
+      );
+      return result;
+    } catch (error) {
+      await recordFailedCall(
+        organizationId,
+        callType,
+        identity,
+        error,
+        callLogger,
+      );
 
-  try {
-    result = await operation();
-  } catch (error) {
-    await recordFailedCall(
-      organizationId,
-      callType,
-      identity,
-      error,
-      callLogger,
-    );
-    throw error;
+      if (
+        attempt === 0 &&
+        error instanceof ProviderCallError &&
+        error.errorType === "rate_limit" &&
+        rateLimitRetry
+      ) {
+        await rateLimitRetry.wait(rateLimitRetry.delayMs);
+        continue;
+      }
+
+      throw error;
+    }
   }
 
-  await recordSuccessfulCall(
-    organizationId,
-    callType,
-    identity,
-    result,
-    callLogger,
-  );
-  return result;
+  throw new Error("供应商调用重试状态无效");
 }
 
 async function recordFailedCall(

@@ -49,6 +49,17 @@ export function createSupabaseGroundedAnswerDependencies(
     rerankingProvider: getGroundedAnswerRerankingProvider(),
     answerProvider: getGroundedAnswerGenerationProvider(),
     callLogger: createCallLogger(supabase),
+    rateLimitRetry: {
+      delayMs: readIntegerConfig(
+        "PROVIDER_RATE_LIMIT_RETRY_DELAY_MS",
+        250,
+        0,
+        2_000,
+      ),
+      async wait(delayMs: number) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      },
+    },
     config: {
       candidateLimit: readIntegerConfig(
         "RETRIEVAL_CANDIDATE_LIMIT",

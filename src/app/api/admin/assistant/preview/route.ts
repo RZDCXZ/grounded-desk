@@ -1,4 +1,5 @@
 import { streamGroundedAnswer } from "@/lib/assistant/grounded-answer";
+import { createAssistantPreviewResponse } from "@/lib/assistant/preview-response";
 import { createSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
 import { requireAdministrator } from "@/lib/auth/require-admin";
 
@@ -17,7 +18,9 @@ export async function POST(request: Request) {
 
   const { data: assistant, error } = await supabase
     .from("assistants")
-    .select("name, service_scope, tone")
+    .select(
+      "name, service_scope, tone, human_contact_label, human_contact_url",
+    )
     .eq("organization_id", organization.id)
     .single();
 
@@ -28,46 +31,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for await (const event of streamGroundedAnswer(
-          {
-            organizationId: organization.id,
-            question: questionResult.question,
-            assistant: {
-              name: assistant.name,
-              serviceScope: assistant.service_scope,
-              tone: assistant.tone,
-            },
-          },
-          createSupabaseGroundedAnswerDependencies(supabase),
-        )) {
-          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-        }
-      } catch {
-        controller.enqueue(
-          encoder.encode(
-            `${JSON.stringify({
-              type: "error",
-              message: "暂时无法完成预览，请稍后重试。",
-            })}\n`,
-          ),
-        );
-      } finally {
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "cache-control": "no-store",
-      "content-type": "application/x-ndjson; charset=utf-8",
-      "x-content-type-options": "nosniff",
-    },
-  });
+  return createAssistantPreviewResponse(
+    streamGroundedAnswer(
+      {
+        organizationId: organization.id,
+        question: questionResult.question,
+        assistant: {
+          name: assistant.name,
+          serviceScope: assistant.service_scope,
+          tone: assistant.tone,
+          humanContactLabel: assistant.human_contact_label,
+          humanContactUrl: assistant.human_contact_url,
+        },
+      },
+      createSupabaseGroundedAnswerDependencies(supabase),
+    ),
+  );
 }
 
 async function readQuestion(request: Request) {

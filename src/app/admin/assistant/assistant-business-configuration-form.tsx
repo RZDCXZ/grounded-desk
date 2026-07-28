@@ -20,6 +20,7 @@ import {
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatusBadge, type Status } from "@/components/admin/status-badge";
+import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -46,11 +47,20 @@ const initialActionState: AssistantBusinessConfigurationActionState = {
 };
 
 type PreviewResult = {
-  status: "idle" | "streaming" | "complete" | "error";
+  status:
+    | "idle"
+    | "streaming"
+    | "complete"
+    | "refusal"
+    | "temporary_failure";
   question: string;
   answer: string;
   citations: GroundedCitation[];
   message?: string;
+  contact?: {
+    label: string;
+    url: string;
+  };
 };
 
 type PreviewStreamEvent =
@@ -63,8 +73,17 @@ type PreviewStreamEvent =
       citations: GroundedCitation[];
     }
   | {
-      type: "error";
+      type: "refusal";
       message: string;
+      contact: {
+        label: string;
+        url: string;
+      };
+    }
+  | {
+      type: "temporary_failure";
+      message: string;
+      retryable: true;
     };
 
 const toneOptions: Array<{
@@ -387,8 +406,10 @@ function AssistantPreview({
 
   async function submitPreviewQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const normalizedQuestion = question.trim();
+    await requestPreview(question.trim());
+  }
 
+  async function requestPreview(normalizedQuestion: string) {
     if (!normalizedQuestion || result.status === "streaming") {
       return;
     }
@@ -438,7 +459,21 @@ function AssistantPreview({
           return;
         }
 
-        throw new Error(streamEvent.message);
+        if (streamEvent.type === "refusal") {
+          setResult((current) => ({
+            ...current,
+            status: "refusal",
+            message: streamEvent.message,
+            contact: streamEvent.contact,
+          }));
+          return;
+        }
+
+        setResult((current) => ({
+          ...current,
+          status: "temporary_failure",
+          message: streamEvent.message,
+        }));
       });
     } catch (error) {
       if (controller.signal.aborted) {
@@ -447,7 +482,7 @@ function AssistantPreview({
 
       setResult((current) => ({
         ...current,
-        status: "error",
+        status: "temporary_failure",
         message:
           error instanceof Error
             ? error.message
@@ -521,31 +556,61 @@ function AssistantPreview({
                 <div
                   className={cn(
                     "min-w-0 flex-1 rounded-xl rounded-tl-sm border bg-card p-4",
-                    result.status === "error"
+                    result.status === "temporary_failure"
                       ? "border-danger/30 bg-danger-light"
+                      : result.status === "refusal"
+                        ? "border-warning/30 bg-warning-light"
                       : "border-line",
                   )}
                 >
-                  {result.status === "error" ? (
+                  {result.status === "temporary_failure" ? (
                     <>
                       <p className="text-[13px] font-medium text-danger">
-                        暂时无法完成预览
+                        服务暂时不可用
                       </p>
                       <p className="mt-1 text-[13px] leading-6 text-ink-600">
                         {result.message}
                       </p>
+                      <Button
+                        className="mt-3"
+                        onClick={() => void requestPreview(result.question)}
+                        size="compact"
+                        type="button"
+                        variant="secondary"
+                      >
+                        重试预览
+                      </Button>
+                    </>
+                  ) : result.status === "refusal" ? (
+                    <>
+                      <p className="text-[13px] font-medium text-warning">
+                        现有知识暂时无法确认
+                      </p>
+                      <p className="mt-1 text-[13px] leading-6 text-ink-600">
+                        {result.message}
+                      </p>
+                      {result.contact ? (
+                        <a
+                          className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-line-strong bg-card px-3 text-[13px] font-medium text-forest-800 transition-colors hover:bg-paper"
+                          href={result.contact.url}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          {result.contact.label}
+                        </a>
+                      ) : null}
                     </>
                   ) : (
                     <>
-                      <p className="whitespace-pre-wrap text-sm leading-6">
-                        {result.answer}
+                      <div className="text-sm leading-6">
+                        <ControlledMarkdown>{result.answer}</ControlledMarkdown>
                         {result.status === "streaming" ? (
                           <Spinner
                             className="ml-1 inline size-3 align-text-bottom text-forest-800"
                             label="正在生成回答"
                           />
                         ) : null}
-                      </p>
+                      </div>
 
                       {result.status === "complete" ? (
                         <CitationList citations={result.citations} />
