@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { EmbeddingProvider } from "@/lib/knowledge/process-manual";
+import type { EmbeddingProvider } from "@/lib/knowledge/process-revision";
 
 const EMBEDDING_DIMENSIONS = 1024;
 const DEFAULT_SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";

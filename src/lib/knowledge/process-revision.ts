@@ -10,7 +10,7 @@ export type CompletedKnowledgeRevision = {
   contentUnits: KnowledgeContentUnit[];
 };
 
-export type ManualKnowledgeRevision = {
+export type KnowledgeRevision = {
   id: string;
   title: string;
   body: string;
@@ -25,12 +25,12 @@ export type KnowledgeRevisionRepository = {
   fail(revisionId: string, reason: string): Promise<void>;
 };
 
-type ManualKnowledgeProcessingDependencies = {
+export type KnowledgeProcessingDependencies = {
   embeddingProvider: EmbeddingProvider;
   revisionRepository: KnowledgeRevisionRepository;
 };
 
-type ManualKnowledgeProcessingResult =
+export type KnowledgeProcessingResult =
   | { status: "available" }
   | { status: "failed"; reason: string };
 
@@ -41,10 +41,10 @@ const MAXIMUM_BODY_CHARACTERS = 50_000;
 const MAXIMUM_CONTENT_UNIT_CHARACTERS = 1_200;
 const MAXIMUM_HEADING_CHARACTERS = 200;
 
-export async function processManualKnowledgeRevision(
-  revision: ManualKnowledgeRevision,
-  dependencies: ManualKnowledgeProcessingDependencies,
-): Promise<ManualKnowledgeProcessingResult> {
+export async function processKnowledgeRevision(
+  revision: KnowledgeRevision,
+  dependencies: KnowledgeProcessingDependencies,
+): Promise<KnowledgeProcessingResult> {
   const body = revision.body.trim();
   const bodyCharacterCount = Array.from(body).length;
 
@@ -236,7 +236,7 @@ async function failRevision(
   revisionId: string,
   reason: string,
   repository: KnowledgeRevisionRepository,
-): Promise<ManualKnowledgeProcessingResult> {
+): Promise<KnowledgeProcessingResult> {
   await repository.fail(revisionId, reason);
   return { status: "failed", reason };
 }

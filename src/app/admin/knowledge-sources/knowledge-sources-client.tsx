@@ -34,15 +34,18 @@ import { Textarea } from "@/components/ui/textarea";
 
 import {
   createManualKnowledgeSource,
+  createWebKnowledgeSource,
   type CreateManualSourceState,
+  type CreateWebSourceState,
 } from "./actions";
 
 const initialCreateState: CreateManualSourceState = { status: "idle" };
+const initialWebCreateState: CreateWebSourceState = { status: "idle" };
 
 export function AddKnowledgeSource() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const [state, formAction, pending] = useActionState(
+  const [manualState, manualFormAction, manualPending] = useActionState(
     async (previousState: CreateManualSourceState, formData: FormData) => {
       const nextState = await createManualKnowledgeSource(
         previousState,
@@ -58,6 +61,22 @@ export function AddKnowledgeSource() {
     },
     initialCreateState,
   );
+  const [webState, webFormAction, webPending] = useActionState(
+    async (previousState: CreateWebSourceState, formData: FormData) => {
+      const nextState = await createWebKnowledgeSource(
+        previousState,
+        formData,
+      );
+
+      if (nextState.status === "created") {
+        setOpen(false);
+        router.refresh();
+      }
+
+      return nextState;
+    },
+    initialWebCreateState,
+  );
 
   return (
     <Sheet onOpenChange={setOpen} open={open}>
@@ -72,24 +91,55 @@ export function AddKnowledgeSource() {
         <SheetHeader>
           <SheetTitle>添加知识来源</SheetTitle>
           <SheetDescription>
-            粘贴手工维护的业务知识，处理完成后即可参与回答。
+            导入公开网页或粘贴手工内容，处理完成后即可参与回答。
           </SheetDescription>
         </SheetHeader>
 
-        <Tabs defaultValue="manual">
+        <Tabs defaultValue="url">
           <TabsList aria-label="知识来源类型">
-            <TabsTrigger
-              disabled
-              title="公开网页导入将在下一张工单开放"
-              value="url"
-            >
-              网页 URL
-            </TabsTrigger>
+            <TabsTrigger value="url">网页 URL</TabsTrigger>
             <TabsTrigger value="manual">手工内容</TabsTrigger>
           </TabsList>
 
+          <TabsContent value="url">
+            <form
+              action={webFormAction}
+              className="flex h-full min-h-0 flex-col"
+            >
+              <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+                <FieldGroup>
+                  <Field controlId="source-web-url">
+                    <FieldLabel>公开 HTTP/HTTPS 地址</FieldLabel>
+                    <Input
+                      maxLength={2048}
+                      name="url"
+                      placeholder="https://example.com/help-center"
+                      required
+                      type="url"
+                    />
+                    <FieldDescription>
+                      系统只提取公开 HTML
+                      中的页面标题和主要正文，不执行页面脚本，也不绕过登录、验证码、付费墙或反爬限制。
+                    </FieldDescription>
+                  </Field>
+
+                  {webState.status === "error" ? (
+                    <Alert role="alert" variant="danger">
+                      <AlertDescription>{webState.message}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                </FieldGroup>
+              </div>
+
+              <SourceFormFooter pending={webPending} />
+            </form>
+          </TabsContent>
+
           <TabsContent value="manual">
-            <form action={formAction} className="flex h-full min-h-0 flex-col">
+            <form
+              action={manualFormAction}
+              className="flex h-full min-h-0 flex-col"
+            >
               <div className="flex-1 overflow-y-auto p-6 sm:p-8">
                 <FieldGroup>
                   <Field controlId="source-title">
@@ -129,31 +179,37 @@ export function AddKnowledgeSource() {
                     </FieldDescription>
                   </Field>
 
-                  {state.status === "error" ? (
+                  {manualState.status === "error" ? (
                     <Alert role="alert" variant="danger">
-                      <AlertDescription>{state.message}</AlertDescription>
+                      <AlertDescription>{manualState.message}</AlertDescription>
                     </Alert>
                   ) : null}
                 </FieldGroup>
               </div>
 
-              <SheetFooter>
-                <SheetClose asChild>
-                  <Button type="button" variant="secondary">
-                    取消
-                  </Button>
-                </SheetClose>
-                <Button disabled={pending} type="submit">
-                  {pending ? (
-                    <Spinner aria-hidden="true" data-icon="inline-start" />
-                  ) : null}
-                  {pending ? "正在添加…" : "确认添加"}
-                </Button>
-              </SheetFooter>
+              <SourceFormFooter pending={manualPending} />
             </form>
           </TabsContent>
         </Tabs>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function SourceFormFooter({ pending }: { pending: boolean }) {
+  return (
+    <SheetFooter>
+      <SheetClose asChild>
+        <Button type="button" variant="secondary">
+          取消
+        </Button>
+      </SheetClose>
+      <Button disabled={pending} type="submit">
+        {pending ? (
+          <Spinner aria-hidden="true" data-icon="inline-start" />
+        ) : null}
+        {pending ? "正在添加…" : "确认添加"}
+      </Button>
+    </SheetFooter>
   );
 }

@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  processManualKnowledgeRevision,
+  processKnowledgeRevision,
   type CompletedKnowledgeRevision,
-} from "../../src/lib/knowledge/process-manual.ts";
+} from "../../src/lib/knowledge/process-revision.ts";
 
 test("完整手工正文形成保留标题与段落语义的可用内容单元和向量", async () => {
   let completedRevision: CompletedKnowledgeRevision | undefined;
   const embeddedTexts: string[][] = [];
 
-  const result = await processManualKnowledgeRevision(
+  const result = await processKnowledgeRevision(
     {
       id: "revision-1",
       title: "演示服务说明",
@@ -60,7 +60,7 @@ test("完整手工正文形成保留标题与段落语义的可用内容单元�
 test("正文过短时保存可理解的失败原因且不调用向量服务", async () => {
   let failure: { revisionId: string; reason: string } | undefined;
 
-  const result = await processManualKnowledgeRevision(
+  const result = await processKnowledgeRevision(
     {
       id: "revision-short",
       title: "过短内容",
@@ -96,7 +96,7 @@ test("正文过短时保存可理解的失败原因且不调用向量服务", as
 test("正文过长时保存安全失败原因且不形成部分可用版本", async () => {
   let failureReason = "";
 
-  const result = await processManualKnowledgeRevision(
+  const result = await processKnowledgeRevision(
     {
       id: "revision-long",
       title: "过长内容",
@@ -132,7 +132,7 @@ test("正文过长时保存安全失败原因且不形成部分可用版本", as
 test("正文无法形成有效内容单元时失败且不调用向量服务", async () => {
   let failureReason = "";
 
-  const result = await processManualKnowledgeRevision(
+  const result = await processKnowledgeRevision(
     {
       id: "revision-empty-units",
       title: "只有结构没有正文",
@@ -176,7 +176,7 @@ test("正文无法形成有效内容单元时失败且不调用向量服务", as
 test("向量服务异常时保存安全失败原因且不形成部分可用版本", async () => {
   let failureReason = "";
 
-  const result = await processManualKnowledgeRevision(
+  const result = await processKnowledgeRevision(
     {
       id: "revision-provider-error",
       title: "向量异常演示",
@@ -216,7 +216,7 @@ test("向量服务异常时保存安全失败原因且不形成部分可用版�
 test("完整版本提交异常时转为安全失败状态", async () => {
   let failureReason = "";
 
-  const result = await processManualKnowledgeRevision(
+  const result = await processKnowledgeRevision(
     {
       id: "revision-commit-error",
       title: "提交异常演示",
@@ -261,7 +261,7 @@ test("超长段落按语义边界形成多个可向量化内容单元", async ()
       `第${index + 1}项服务说明包含来源核查、知识整理、处理状态确认和后续维护建议，管理员可以据此验证完整业务语义。`,
   ).join("");
 
-  const result = await processManualKnowledgeRevision(
+  const result = await processKnowledgeRevision(
     {
       id: "revision-long-paragraph",
       title: "完整服务项目",
@@ -301,7 +301,7 @@ test("超长段落按语义边界形成多个可向量化内容单元", async ()
 test("短小但有效的事实段落不会因长度被丢弃", async () => {
   let completedRevision: CompletedKnowledgeRevision | undefined;
 
-  await processManualKnowledgeRevision(
+  await processKnowledgeRevision(
     {
       id: "revision-short-fact",
       title: "售后政策",
@@ -340,7 +340,7 @@ test("短小但有效的事实段落不会因长度被丢弃", async () => {
 test("普通标题与无空行 Markdown 标题都形成内容单元边界", async () => {
   let completedRevision: CompletedKnowledgeRevision | undefined;
 
-  await processManualKnowledgeRevision(
+  await processKnowledgeRevision(
     {
       id: "revision-heading-boundaries",
       title: "业务说明",
@@ -381,7 +381,7 @@ test("普通标题与无空行 Markdown 标题都形成内容单元边界", asyn
 test("标题后的连续短正文行不会被误判为新标题", async () => {
   let completedRevision: CompletedKnowledgeRevision | undefined;
 
-  await processManualKnowledgeRevision(
+  await processKnowledgeRevision(
     {
       id: "revision-short-lines",
       title: "退款政策",

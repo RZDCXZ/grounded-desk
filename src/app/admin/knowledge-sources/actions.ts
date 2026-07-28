@@ -6,13 +6,25 @@ import { after } from "next/server";
 
 import { requireAdministrator } from "@/lib/auth/require-admin";
 import { getKnowledgeEmbeddingProvider } from "@/lib/ai/embeddings";
-import { processManualKnowledgeRevision } from "@/lib/knowledge/process-manual";
-import { createSupabaseKnowledgeRevisionRepository } from "@/lib/knowledge/supabase-revision-repository";
+import {
+  createDefaultWebFetchDependencies,
+  fetchWebKnowledgePage,
+  parseWebSourceUrl,
+} from "@/lib/knowledge/fetch-web-page";
+import { processKnowledgeRevision } from "@/lib/knowledge/process-revision";
+import { processWebKnowledgeRevision } from "@/lib/knowledge/process-web";
+import {
+  createSupabaseKnowledgeRevisionRepository,
+  createSupabaseWebKnowledgeRevisionRepository,
+  prepareSupabaseWebKnowledgeRevision,
+} from "@/lib/knowledge/supabase-revision-repository";
 
 export type CreateManualSourceState =
   | { status: "idle" }
   | { status: "error"; message: string }
   | { status: "created"; sourceId: string };
+
+export type CreateWebSourceState = CreateManualSourceState;
 
 export async function createManualKnowledgeSource(
   _previousState: CreateManualSourceState,
@@ -75,6 +87,67 @@ export async function createManualKnowledgeSource(
   return { status: "created", sourceId };
 }
 
+export async function createWebKnowledgeSource(
+  _previousState: CreateWebSourceState,
+  formData: FormData,
+): Promise<CreateWebSourceState> {
+  const { supabase } = await requireAdministrator();
+  const submittedUrl = readFormValue(formData, "url");
+  const sourceUrl = parseWebSourceUrl(submittedUrl);
+
+  if (!sourceUrl || submittedUrl.length > 2048) {
+    return {
+      status: "error",
+      message: "请输入有效且不含登录凭据的 HTTP 或 HTTPS 网页地址。",
+    };
+  }
+
+  const { data, error } = await supabase.rpc("create_web_knowledge_source", {
+    source_url: sourceUrl.href,
+    placeholder_title: sourceUrl.hostname.slice(0, 160),
+  });
+  const sourceId = data?.[0]?.knowledge_source_id;
+  const revisionId = data?.[0]?.knowledge_revision_id;
+
+  if (
+    error ||
+    typeof sourceId !== "string" ||
+    typeof revisionId !== "string"
+  ) {
+    return {
+      status: "error",
+      message: "暂时无法添加网页知识来源，请稍后重试。",
+    };
+  }
+
+  revalidateKnowledgeSourcePaths();
+  after(async () => {
+    await delayKnowledgeProcessingForEndToEndTest();
+    const revisionRepository =
+      createSupabaseWebKnowledgeRevisionRepository(supabase);
+
+    await processWebKnowledgeRevision(
+      { id: revisionId, originalUrl: sourceUrl.href },
+      {
+        fetchPage(url) {
+          return fetchWebKnowledgePage(
+            url,
+            createDefaultWebFetchDependencies(),
+          );
+        },
+        prepareRevision(revision) {
+          return prepareSupabaseWebKnowledgeRevision(supabase, revision);
+        },
+        embeddingProvider: getKnowledgeEmbeddingProvider(),
+        revisionRepository,
+      },
+    );
+    revalidateKnowledgeSourcePaths();
+  });
+
+  return { status: "created", sourceId };
+}
+
 async function delayKnowledgeProcessingForEndToEndTest() {
   if (process.env.NODE_ENV === "production") {
     return;
@@ -105,7 +178,7 @@ async function processManualKnowledgeSourceForOrganization(
     return { status: "unchanged" } as const;
   }
 
-  const result = await processManualKnowledgeRevision(
+  const result = await processKnowledgeRevision(
     revision,
     {
       embeddingProvider: getKnowledgeEmbeddingProvider(),

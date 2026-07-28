@@ -55,11 +55,52 @@ async function signInAsAdministrator(page: Page, request: APIRequestContext) {
   await expect(page).toHaveURL(/\/admin$/);
 }
 
+test("管理员导入受控公开网页并看到提取标题和可用状态", async ({
+  page,
+  request,
+}) => {
+  await signInAsAdministrator(page, request);
+  await page.goto("/admin/knowledge-sources");
+  await page.getByRole("button", { name: "添加知识来源" }).click();
+
+  await expect(page.getByRole("tab", { name: "网页 URL" })).toHaveAttribute(
+    "data-state",
+    "active",
+  );
+  await page
+    .getByLabel("公开 HTTP/HTTPS 地址")
+    .fill("http://127.0.0.1:4173/article");
+
+  const sourceRow = page
+    .getByRole("row")
+    .filter({ hasText: "http://127.0.0.1:4173/article" });
+  const processingObserved = sourceRow
+    .getByText("处理中", { exact: true })
+    .waitFor();
+  await page.getByRole("button", { name: "确认添加" }).click();
+
+  await processingObserved;
+  await expect(sourceRow).toContainText("受控网页服务说明", {
+    timeout: 15_000,
+  });
+  await expect(sourceRow).toContainText("可用");
+  await expect(sourceRow.getByRole("link")).toHaveAttribute(
+    "href",
+    "http://127.0.0.1:4173/article",
+  );
+});
+
 test("管理员导入手工知识来源并在概览看到可用数量", async ({
   page,
   request,
 }) => {
   await signInAsAdministrator(page, request);
+  const availableSourceMetric = page
+    .getByRole("article")
+    .filter({ hasText: "可用知识来源" });
+  const availableSourcesBefore = Number(
+    await availableSourceMetric.locator(".mono").textContent(),
+  );
   await page
     .getByRole("link", { name: "知识来源", exact: true })
     .click();
@@ -107,7 +148,7 @@ test("管理员导入手工知识来源并在概览看到可用数量", async ({
   await page.getByRole("link", { name: "概览" }).click();
   await expect(
     page.getByRole("article").filter({ hasText: "可用知识来源" }),
-  ).toContainText("01");
+  ).toContainText(String(availableSourcesBefore + 1).padStart(2, "0"));
 });
 
 test("无效手工正文显示安全失败原因且没有可用版本", async ({
@@ -117,6 +158,7 @@ test("无效手工正文显示安全失败原因且没有可用版本", async ({
   await signInAsAdministrator(page, request);
   await page.goto("/admin/knowledge-sources");
   await page.getByRole("button", { name: "添加知识来源" }).click();
+  await page.getByRole("tab", { name: "手工内容" }).click();
 
   await page
     .getByLabel("标题", { exact: true })
@@ -152,8 +194,9 @@ test("管理员可用键盘操作添加知识来源浮层且焦点不会离开",
   const sheet = page.getByRole("dialog", { name: "添加知识来源" });
   await expect(sheet).toBeVisible();
   await expect(sheet).toHaveAccessibleDescription(
-    "粘贴手工维护的业务知识，处理完成后即可参与回答。",
+    "导入公开网页或粘贴手工内容，处理完成后即可参与回答。",
   );
+  await sheet.getByRole("tab", { name: "手工内容" }).click();
   const bodyField = sheet.getByLabel("正文", { exact: true });
   await expect(bodyField).toHaveAttribute(
     "aria-describedby",
@@ -211,6 +254,7 @@ test("360px 下管理员可使用移动导航且主要操作目标不小于 40px
   const addSourceSheet = page.getByRole("dialog", {
     name: "添加知识来源",
   });
+  await addSourceSheet.getByRole("tab", { name: "手工内容" }).click();
   await expect(addSourceSheet.getByLabel("标题", { exact: true })).toBeVisible();
   await expect(addSourceSheet.getByLabel("正文", { exact: true })).toBeVisible();
   await expect(

@@ -42,7 +42,7 @@ select throws_ok(
   'manual knowledge source requires a non-empty title'
 );
 
-select public.complete_manual_knowledge_revision(
+select public.complete_knowledge_revision(
   (select knowledge_revision_id from created_manual_source),
   jsonb_build_array(
     jsonb_build_object(
@@ -100,7 +100,7 @@ update public.knowledge_sources
 set status = 'processing'
 where id = (select knowledge_source_id from created_manual_source);
 
-select public.fail_manual_knowledge_revision(
+select public.fail_knowledge_revision(
   '00000000-0000-4000-8000-000000000803',
   '向量服务暂时不可用，请稍后重试。'
 );
@@ -131,7 +131,7 @@ from public.create_manual_knowledge_source(
   null
 );
 
-select public.fail_manual_knowledge_revision(
+select public.fail_knowledge_revision(
   (select knowledge_revision_id from failed_manual_source),
   '正文无法形成有效内容单元，请补充清晰的标题和段落内容后重试。'
 );

@@ -1,4 +1,4 @@
-import { ExternalLink, FileText } from "lucide-react";
+import { ExternalLink, FileText, Globe } from "lucide-react";
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import {
@@ -43,8 +43,7 @@ export default async function KnowledgeSourcesPage() {
     .order("updated_at", { ascending: false });
   const sources = (data ?? []) as KnowledgeSource[];
   const hasProcessingSources = sources.some(
-    ({ source_type: sourceType, status }) =>
-      sourceType === "manual" && status === "processing",
+    ({ status }) => status === "processing",
   );
 
   return (
@@ -95,18 +94,20 @@ function EmptyKnowledgeSources() {
       </EmptyMedia>
       <EmptyTitle>还没有知识来源</EmptyTitle>
       <EmptyDescription>
-        添加一项手工知识来源，处理完成后即可用于有据回答。
+        导入公开网页或添加手工内容，处理完成后即可用于有据回答。
       </EmptyDescription>
     </Empty>
   );
 }
 
 function KnowledgeSourceRow({ source }: { source: KnowledgeSource }) {
+  const SourceIcon = source.source_type === "url" ? Globe : FileText;
+
   return (
     <tr>
       <td className="px-6 py-4">
         <div className="flex items-center gap-3">
-          <FileText
+          <SourceIcon
             className="size-5 shrink-0 text-(--forest-800)"
             strokeWidth={1.7}
           />
