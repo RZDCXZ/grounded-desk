@@ -26,6 +26,10 @@ export type CreateManualSourceState =
 
 export type CreateWebSourceState = CreateManualSourceState;
 
+export type KnowledgeSourceActionState =
+  | { status: "success" }
+  | { status: "error"; message: string };
+
 export async function createManualKnowledgeSource(
   _previousState: CreateManualSourceState,
   formData: FormData,
@@ -123,29 +127,128 @@ export async function createWebKnowledgeSource(
   revalidateKnowledgeSourcePaths();
   after(async () => {
     await delayKnowledgeProcessingForEndToEndTest();
-    const revisionRepository =
-      createSupabaseWebKnowledgeRevisionRepository(supabase);
-
-    await processWebKnowledgeRevision(
-      { id: revisionId, originalUrl: sourceUrl.href },
-      {
-        fetchPage(url) {
-          return fetchWebKnowledgePage(
-            url,
-            createDefaultWebFetchDependencies(),
-          );
-        },
-        prepareRevision(revision) {
-          return prepareSupabaseWebKnowledgeRevision(supabase, revision);
-        },
-        embeddingProvider: getKnowledgeEmbeddingProvider(),
-        revisionRepository,
-      },
+    await processWebKnowledgeSourceRevision(
+      supabase,
+      revisionId,
+      sourceUrl.href,
     );
     revalidateKnowledgeSourcePaths();
   });
 
   return { status: "created", sourceId };
+}
+
+export async function setKnowledgeSourceEnabled(
+  sourceId: string,
+  enabled: boolean,
+): Promise<KnowledgeSourceActionState> {
+  const { supabase } = await requireAdministrator();
+  const { error } = await supabase.rpc("set_knowledge_source_enabled", {
+    target_source_id: sourceId,
+    source_enabled: enabled,
+  });
+
+  if (error) {
+    return {
+      status: "error",
+      message: enabled
+        ? "暂时无法重新启用知识来源，请稍后重试。"
+        : "暂时无法停用知识来源，请稍后重试。",
+    };
+  }
+
+  revalidateKnowledgeSourcePaths();
+  return { status: "success" };
+}
+
+export async function retryKnowledgeSource(
+  sourceId: string,
+): Promise<KnowledgeSourceActionState> {
+  const { supabase, organization } = await requireAdministrator();
+  const { data, error } = await supabase.rpc("retry_knowledge_source", {
+    target_source_id: sourceId,
+  });
+  const retry = data?.[0];
+
+  if (
+    error ||
+    typeof retry?.knowledge_revision_id !== "string" ||
+    (retry.source_type !== "manual" && retry.source_type !== "url") ||
+    (retry.source_type === "url" && typeof retry.original_url !== "string")
+  ) {
+    return {
+      status: "error",
+      message: "暂时无法重试知识来源，请稍后再试。",
+    };
+  }
+
+  revalidateKnowledgeSourcePaths();
+  after(async () => {
+    await delayKnowledgeProcessingForEndToEndTest();
+
+    if (retry.source_type === "url") {
+      await processWebKnowledgeSourceRevision(
+        supabase,
+        retry.knowledge_revision_id,
+        retry.original_url,
+      );
+    } else {
+      await processManualKnowledgeSourceForOrganization(
+        supabase,
+        organization.id,
+        sourceId,
+      );
+    }
+
+    revalidateKnowledgeSourcePaths();
+  });
+
+  return { status: "success" };
+}
+
+export async function deleteKnowledgeSource(
+  sourceId: string,
+): Promise<KnowledgeSourceActionState> {
+  const { supabase } = await requireAdministrator();
+  const { error } = await supabase.rpc("delete_knowledge_source", {
+    target_source_id: sourceId,
+  });
+
+  if (error) {
+    return {
+      status: "error",
+      message: "暂时无法删除知识来源，请稍后重试。",
+    };
+  }
+
+  revalidateKnowledgeSourcePaths();
+  return { status: "success" };
+}
+
+async function processWebKnowledgeSourceRevision(
+  supabase: SupabaseClient,
+  revisionId: string,
+  originalUrl: string,
+) {
+  const revisionRepository =
+    createSupabaseWebKnowledgeRevisionRepository(supabase);
+
+  return processWebKnowledgeRevision(
+    { id: revisionId, originalUrl },
+    {
+      fetchPage(url) {
+        return fetchWebKnowledgePage(
+          url,
+          createDefaultWebFetchDependencies(),
+        );
+      },
+      prepareRevision(revision) {
+        return prepareSupabaseWebKnowledgeRevision(supabase, revision);
+      },
+      embeddingProvider: getKnowledgeEmbeddingProvider(),
+      revisionRepository,
+    },
+  );
 }
 
 async function delayKnowledgeProcessingForEndToEndTest() {

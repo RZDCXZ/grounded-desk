@@ -14,6 +14,7 @@ import {
 import { requireAdministrator } from "@/lib/auth/require-admin";
 
 import { AddKnowledgeSource } from "./knowledge-sources-client";
+import { KnowledgeSourceActions } from "./knowledge-source-actions";
 import { ProcessingStatusRefresh } from "./processing-status-refresh";
 
 type SourceStatus = Extract<
@@ -34,17 +35,29 @@ type KnowledgeSource = {
 
 export default async function KnowledgeSourcesPage() {
   const { supabase, organization } = await requireAdministrator();
-  const { data } = await supabase
-    .from("knowledge_sources")
-    .select(
-      "id, title, source_type, original_url, status, failure_reason, current_revision_id, updated_at",
-    )
-    .eq("organization_id", organization.id)
-    .order("updated_at", { ascending: false });
-  const sources = (data ?? []) as KnowledgeSource[];
-  const hasProcessingSources = sources.some(
-    ({ status }) => status === "processing",
+  const [sourcesResult, processingRevisionsResult] = await Promise.all([
+    supabase
+      .from("knowledge_sources")
+      .select(
+        "id, title, source_type, original_url, status, failure_reason, current_revision_id, updated_at",
+      )
+      .eq("organization_id", organization.id)
+      .order("updated_at", { ascending: false }),
+    supabase
+      .from("knowledge_revisions")
+      .select("knowledge_source_id")
+      .eq("organization_id", organization.id)
+      .eq("status", "processing"),
+  ]);
+  const sources = (sourcesResult.data ?? []) as KnowledgeSource[];
+  const processingSourceIds = new Set(
+    (processingRevisionsResult.data ?? []).map(
+      ({ knowledge_source_id }) => knowledge_source_id as string,
+    ),
   );
+  const hasProcessingSources =
+    processingSourceIds.size > 0 ||
+    sources.some(({ status }) => status === "processing");
 
   return (
     <main className="page-enter min-h-screen">
@@ -70,11 +83,19 @@ export default async function KnowledgeSourcesPage() {
                     <th className="px-6 py-4">状态</th>
                     <th className="px-6 py-4">当前版本</th>
                     <th className="px-6 py-4">最近更新</th>
+                    <th className="px-6 py-4 text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-(--line) text-[13px]">
                   {sources.map((source) => (
-                    <KnowledgeSourceRow key={source.id} source={source} />
+                    <KnowledgeSourceRow
+                      key={source.id}
+                      processing={
+                        processingSourceIds.has(source.id) ||
+                        source.status === "processing"
+                      }
+                      source={source}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -100,7 +121,13 @@ function EmptyKnowledgeSources() {
   );
 }
 
-function KnowledgeSourceRow({ source }: { source: KnowledgeSource }) {
+function KnowledgeSourceRow({
+  processing,
+  source,
+}: {
+  processing: boolean;
+  source: KnowledgeSource;
+}) {
   const SourceIcon = source.source_type === "url" ? Globe : FileText;
 
   return (
@@ -135,8 +162,12 @@ function KnowledgeSourceRow({ source }: { source: KnowledgeSource }) {
         )}
       </td>
       <td className="px-6 py-4">
-        <StatusBadge status={source.status} />
-        {source.failure_reason ? (
+        <StatusBadge status={processing ? "processing" : source.status} />
+        {processing && source.current_revision_id ? (
+          <p className="mt-1 max-w-68 text-[11px] leading-4 text-(--ink-600)">
+            当前版本继续可用
+          </p>
+        ) : source.failure_reason ? (
           <p className="mt-1 max-w-68 text-[11px] leading-4 text-(--danger)">
             {source.failure_reason}
           </p>
@@ -147,6 +178,15 @@ function KnowledgeSourceRow({ source }: { source: KnowledgeSource }) {
       </td>
       <td className="mono px-6 py-4 text-xs text-(--ink-600)">
         {formatUpdatedAt(source.updated_at)}
+      </td>
+      <td className="px-6 py-1.5 text-right">
+        <KnowledgeSourceActions
+          processing={processing}
+          retryable={Boolean(source.failure_reason)}
+          sourceId={source.id}
+          sourceTitle={source.title}
+          status={source.status}
+        />
       </td>
     </tr>
   );

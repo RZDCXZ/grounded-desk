@@ -178,6 +178,142 @@ test("无效手工正文显示安全失败原因且没有可用版本", async ({
     "正文内容过短，请补充至少 80 个字符后重试。",
   );
   await expect(sourceRow).toContainText("—");
+
+  const retryProcessingObserved = sourceRow
+    .getByText("处理中", { exact: true })
+    .waitFor();
+  await sourceRow.getByRole("button", { name: "重试" }).click();
+  await retryProcessingObserved;
+  await expect(sourceRow).toContainText("失败", { timeout: 15_000 });
+  await expect(sourceRow).toContainText(
+    "正文内容过短，请补充至少 80 个字符后重试。",
+  );
+
+  await sourceRow.getByRole("button", { name: "停用" }).click();
+  await expect(sourceRow).toContainText("已停用");
+  await sourceRow.getByRole("button", { name: "重新启用" }).click();
+  await expect(sourceRow).toContainText("失败");
+});
+
+test("管理员停用和重新启用知识来源且概览数量保持一致", async ({
+  page,
+  request,
+}) => {
+  await signInAsAdministrator(page, request);
+  const availableSourceMetric = page
+    .getByRole("article")
+    .filter({ hasText: "可用知识来源" });
+  const availableSourcesBefore = Number(
+    await availableSourceMetric.locator(".mono").textContent(),
+  );
+
+  await page.goto("/admin/knowledge-sources");
+  await page.getByRole("button", { name: "添加知识来源" }).click();
+  await page.getByRole("tab", { name: "手工内容" }).click();
+  await page
+    .getByLabel("标题", { exact: true })
+    .fill("可停用的演示知识来源");
+  await page
+    .getByLabel("正文", { exact: true })
+    .fill(repeatLifecycleBody("停用与重新启用"));
+
+  const sourceRow = page
+    .getByRole("row")
+    .filter({ hasText: "可停用的演示知识来源" });
+  await page.getByRole("button", { name: "确认添加" }).click();
+  await expect(sourceRow).toContainText("可用", { timeout: 15_000 });
+
+  await sourceRow.getByRole("button", { name: "停用" }).click();
+  await expect(sourceRow).toContainText("已停用");
+  await expect(sourceRow).toContainText("v1");
+
+  await page.getByRole("link", { name: "概览" }).click();
+  await expect(availableSourceMetric).toContainText(
+    String(availableSourcesBefore).padStart(2, "0"),
+  );
+
+  await page.getByRole("link", { name: "知识来源", exact: true }).click();
+  await sourceRow.getByRole("button", { name: "重新启用" }).click();
+  await expect(sourceRow).toContainText("可用");
+  await expect(sourceRow).toContainText("v1");
+
+  await page.getByRole("link", { name: "概览" }).click();
+  await expect(availableSourceMetric).toContainText(
+    String(availableSourcesBefore + 1).padStart(2, "0"),
+  );
+});
+
+test("管理员明确确认后永久删除知识来源且取消不会产生变更", async ({
+  page,
+  request,
+}) => {
+  await signInAsAdministrator(page, request);
+  await page.goto("/admin/knowledge-sources");
+  await page.getByRole("button", { name: "添加知识来源" }).click();
+  await page.getByRole("tab", { name: "手工内容" }).click();
+  await page
+    .getByLabel("标题", { exact: true })
+    .fill("等待删除的演示知识来源");
+  await page
+    .getByLabel("正文", { exact: true })
+    .fill(repeatLifecycleBody("永久删除"));
+
+  const sourceRow = page
+    .getByRole("row")
+    .filter({ hasText: "等待删除的演示知识来源" });
+  await page.getByRole("button", { name: "确认添加" }).click();
+  await expect(sourceRow).toContainText("可用", { timeout: 15_000 });
+
+  await sourceRow.getByRole("button", { name: "删除" }).click();
+  const confirmation = page.getByRole("alertdialog", {
+    name: "永久删除知识来源",
+  });
+  await expect(confirmation).toContainText(
+    "正文、知识版本、内容单元和向量将被永久删除，且不可恢复。",
+  );
+  await confirmation.getByRole("button", { name: "取消" }).click();
+  await expect(confirmation).toBeHidden();
+  await expect(sourceRow).toBeVisible();
+
+  await sourceRow.getByRole("button", { name: "删除" }).click();
+  await confirmation
+    .getByRole("button", { name: "确认永久删除" })
+    .click();
+  await expect(sourceRow).toBeHidden();
+});
+
+test("管理员可以在知识来源处理期间确认永久删除", async ({
+  page,
+  request,
+}) => {
+  await signInAsAdministrator(page, request);
+  await page.goto("/admin/knowledge-sources");
+  await page.getByRole("button", { name: "添加知识来源" }).click();
+  await page.getByRole("tab", { name: "手工内容" }).click();
+  await page
+    .getByLabel("标题", { exact: true })
+    .fill("处理期间删除的演示知识来源");
+  await page
+    .getByLabel("正文", { exact: true })
+    .fill(repeatLifecycleBody("处理期间永久删除"));
+
+  const sourceRow = page
+    .getByRole("row")
+    .filter({ hasText: "处理期间删除的演示知识来源" });
+  const processingObserved = sourceRow
+    .getByText("处理中", { exact: true })
+    .waitFor();
+  await page.getByRole("button", { name: "确认添加" }).click();
+  await processingObserved;
+
+  await sourceRow.getByRole("button", { name: "删除" }).click();
+  await page
+    .getByRole("alertdialog", { name: "永久删除知识来源" })
+    .getByRole("button", { name: "确认永久删除" })
+    .click();
+  await expect(sourceRow).toBeHidden();
+  await page.waitForTimeout(1_000);
+  await expect(sourceRow).toBeHidden();
 });
 
 test("管理员可用键盘操作添加知识来源浮层且焦点不会离开", async ({
@@ -276,4 +412,14 @@ async function expectTargetToBeAtLeast40Pixels(
   expect(box).not.toBeNull();
   expect(box!.width).toBeGreaterThanOrEqual(40);
   expect(box!.height).toBeGreaterThanOrEqual(40);
+}
+
+function repeatLifecycleBody(action: string) {
+  return [
+    "## 生命周期说明",
+    "",
+    `这是用于验证${action}的演示正文，系统应保留当前知识版本、内容单元和向量，不重新执行处理流程。`,
+    "",
+    "管理员完成操作后，列表状态与概览中的可用知识来源数量应立即保持一致。",
+  ].join("\n");
 }
