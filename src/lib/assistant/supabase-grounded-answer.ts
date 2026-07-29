@@ -7,10 +7,12 @@ import {
   getGroundedAnswerGenerationProvider,
   getGroundedAnswerRerankingProvider,
 } from "@/lib/ai/grounded-answer-providers";
+import { readRetrievalConfig } from "@/lib/assistant/retrieval-config";
 import type {
   AiCallLog,
   RetrievedContentUnit,
 } from "@/lib/assistant/grounded-answer";
+import { readIntegerServerConfig } from "@/lib/server-config";
 
 type RetrievedContentUnitRow = {
   content_unit_id: string;
@@ -26,6 +28,7 @@ export function createSupabaseGroundedAnswerDependencies(
   supabase: SupabaseClient,
 ) {
   const embeddingProvider = getKnowledgeEmbeddingProviderWithMetadata();
+  const retrievalConfig = readRetrievalConfig();
 
   return {
     questionEmbeddingProvider: {
@@ -50,7 +53,8 @@ export function createSupabaseGroundedAnswerDependencies(
     answerProvider: getGroundedAnswerGenerationProvider(),
     callLogger: createCallLogger(supabase),
     rateLimitRetry: {
-      delayMs: readIntegerConfig(
+      delayMs: readIntegerServerConfig(
+        process.env,
         "PROVIDER_RATE_LIMIT_RETRY_DELAY_MS",
         250,
         0,
@@ -60,21 +64,7 @@ export function createSupabaseGroundedAnswerDependencies(
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       },
     },
-    config: {
-      candidateLimit: readIntegerConfig(
-        "RETRIEVAL_CANDIDATE_LIMIT",
-        20,
-        1,
-        100,
-      ),
-      evidenceLimit: readIntegerConfig("RERANK_EVIDENCE_LIMIT", 5, 1, 20),
-      evidenceThreshold: readNumberConfig(
-        "RERANK_EVIDENCE_THRESHOLD",
-        0.5,
-        0,
-        1,
-      ),
-    },
+    config: retrievalConfig,
   };
 }
 
@@ -132,34 +122,4 @@ function createCallLogger(supabase: SupabaseClient) {
       }
     },
   };
-}
-
-function readIntegerConfig(
-  name: string,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-) {
-  const value = Number(process.env[name] ?? fallback);
-
-  if (!Number.isInteger(value) || value < minimum || value > maximum) {
-    throw new Error(`服务端配置 ${name} 必须是 ${minimum}–${maximum} 的整数`);
-  }
-
-  return value;
-}
-
-function readNumberConfig(
-  name: string,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-) {
-  const value = Number(process.env[name] ?? fallback);
-
-  if (!Number.isFinite(value) || value < minimum || value > maximum) {
-    throw new Error(`服务端配置 ${name} 必须介于 ${minimum} 和 ${maximum}`);
-  }
-
-  return value;
 }

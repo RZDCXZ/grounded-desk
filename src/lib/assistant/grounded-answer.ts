@@ -4,6 +4,7 @@ import {
   type ProviderCallResult,
   type ProviderErrorType,
 } from "../ai/provider-call.ts";
+import { detectQuestionLanguage } from "./question-language.ts";
 
 export { ProviderCallError } from "../ai/provider-call.ts";
 
@@ -145,7 +146,7 @@ export async function* streamGroundedAnswer(
   );
 
   if (candidates.length === 0) {
-    yield createGroundedRefusal(input.assistant);
+    yield createGroundedRefusal(input.assistant, input.question);
     return;
   }
 
@@ -179,7 +180,7 @@ export async function* streamGroundedAnswer(
     });
 
   if (evidence.length === 0) {
-    yield createGroundedRefusal(input.assistant);
+    yield createGroundedRefusal(input.assistant, input.question);
     return;
   }
 
@@ -251,10 +252,13 @@ export async function* streamGroundedAnswer(
 
 function createGroundedRefusal(
   assistant: GroundedAnswerInput["assistant"],
+  question: string,
 ): GroundedAnswerEvent {
   return {
     type: "refusal",
-    message: "当前可用知识不足以支持这个问题的事实性回答。",
+    message: detectQuestionLanguage(question) === "en"
+      ? "The currently available knowledge is insufficient to support a factual answer to this question."
+      : "当前可用知识不足以支持这个问题的事实性回答。",
     contact: {
       label: assistant.humanContactLabel,
       url: assistant.humanContactUrl,

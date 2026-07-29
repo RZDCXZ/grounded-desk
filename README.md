@@ -63,12 +63,31 @@ pnpm test
 
 完整检查会依次执行类型检查、lint、空库重建、数据库 RLS 测试和 Playwright Magic Link 闭环。
 
+## 检索离线评测
+
+运行固定的 20 题双语基线（10 题应获得有据回答，10 题应可靠拒答）：
+
+```bash
+pnpm eval:retrieval
+```
+
+命令读取 `.env.local` 中的 `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 和 `RERANK_EVIDENCE_THRESHOLD`，输出错误拒答、错误回答、来源外事实、预期引用缺失、非预期引用、语言不匹配与技术错误。任一契约失败时命令以非零状态退出。
+
+需要保存机器可读摘要以比较配置变化时运行：
+
+```bash
+pnpm eval:retrieval -- --json
+```
+
+调整三项检索配置时应比较整组摘要，不为单个问题添加特例。离线评测使用固定候选与供应商结果，不调用真实模型，也不消耗额度。
+
 ## 配置边界
 
 `.env.example` 明确区分两类配置：
 
 - `NEXT_PUBLIC_SUPABASE_URL` 与 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 可以进入浏览器包；数据库 RLS 是最终授权边界。
 - `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY`、`ADMIN_EMAIL` 和 `APP_URL` 仅供服务端使用，禁止添加 `NEXT_PUBLIC_` 前缀。
+- `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 与 `RERANK_EVIDENCE_THRESHOLD` 是统一的服务端检索配置，由整组离线评测校准，不向管理员界面开放。
 
 本地环境使用 `supabase/config.toml`、固定本地端口和演示种子。云端环境只共享迁移与应用代码，不应上传 `supabase/seed.sql` 中的演示身份或复制本地业务数据；云端密钥必须在部署平台单独配置。
 

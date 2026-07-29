@@ -569,6 +569,60 @@ test("召回没有候选内容单元时直接可靠拒答而不请求重排", as
   ]);
 });
 
+for (const question of [
+  "Where is your physical office?",
+  "Tell me your office address.",
+  "Pricing details please.",
+  "Refund policy?",
+  "Support hours?",
+  "Delivery timeline?",
+  "Warranty period?",
+]) {
+  test(`明显英文问题在证据不足时使用英文可靠拒答：${question}`, async () => {
+    const dependencies = createHappyPathDependencies();
+    const input = happyPathInput();
+    const events: GroundedAnswerEvent[] = [];
+    input.question = question;
+    dependencies.candidateRepository.retrieve = async () => [];
+
+    for await (const event of streamGroundedAnswer(input, dependencies)) {
+      events.push(event);
+    }
+
+    assert.equal(events[0]?.type, "refusal");
+    assert.equal(
+      events[0]?.type === "refusal" ? events[0].message : "",
+      "The currently available knowledge is insufficient to support a factual answer to this question.",
+    );
+  });
+}
+
+for (const question of [
+  "你们的 pricing details 是什么？",
+  "Où se trouve votre bureau physique ?",
+  "Ou se trouve votre bureau physique ?",
+  "Donde esta su oficina?",
+  "Waar is uw kantoor?",
+]) {
+  test(`混合或非英文问题默认使用中文可靠拒答：${question}`, async () => {
+    const dependencies = createHappyPathDependencies();
+    const input = happyPathInput();
+    const events: GroundedAnswerEvent[] = [];
+    input.question = question;
+    dependencies.candidateRepository.retrieve = async () => [];
+
+    for await (const event of streamGroundedAnswer(input, dependencies)) {
+      events.push(event);
+    }
+
+    assert.equal(events[0]?.type, "refusal");
+    assert.equal(
+      events[0]?.type === "refusal" ? events[0].message : "",
+      "当前可用知识不足以支持这个问题的事实性回答。",
+    );
+  });
+}
+
 test("重排无效响应作为技术故障抛出且不会调用回答模型", async () => {
   const dependencies = createHappyPathDependencies();
   dependencies.rerankingProvider.rerank = async () => {
