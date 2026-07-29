@@ -71,6 +71,11 @@ type PreviewResult = {
   };
 };
 
+type CopyStatusState = {
+  result: "copied" | "failed";
+  target: "embed" | "public";
+};
+
 const toneOptions: Array<{
   value: AssistantTone;
   label: string;
@@ -95,9 +100,11 @@ const toneOptions: Array<{
 
 export function AssistantBusinessConfigurationForm({
   assistant,
+  embedScriptUrl,
   publicUrl,
 }: {
   assistant: AssistantBusinessConfigurationRecord;
+  embedScriptUrl: string | null;
   publicUrl: string | null;
 }) {
   const [actionState, formAction, pending] = useActionState(
@@ -337,6 +344,7 @@ export function AssistantBusinessConfigurationForm({
           </form>
 
           <PublicationPanel
+            embedScriptUrl={embedScriptUrl}
             publicUrl={publicUrl}
             status={assistant.status}
           />
@@ -391,75 +399,95 @@ function PublicationSubmitButton({
 }
 
 function PublicationPanel({
+  embedScriptUrl,
   publicUrl,
   status,
 }: {
+  embedScriptUrl: string | null;
   publicUrl: string | null;
   status: AssistantBusinessConfigurationRecord["status"];
 }) {
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  );
-  const publiclyAvailable = status === "published" && publicUrl;
+  const [copyStatus, setCopyStatus] = useState<CopyStatusState | null>(null);
+  const publiclyAvailable =
+    status === "published" && publicUrl && embedScriptUrl;
+  const embedCode = embedScriptUrl
+    ? `<script async src="${embedScriptUrl}"></script>`
+    : "";
 
-  async function copyPublicUrl() {
-    if (!publicUrl) {
-      return;
-    }
-
+  async function copyText(value: string, target: "embed" | "public") {
     try {
-      await navigator.clipboard.writeText(publicUrl);
-      setCopyStatus("copied");
+      await navigator.clipboard.writeText(value);
+      setCopyStatus({ result: "copied", target });
     } catch {
-      setCopyStatus("failed");
+      setCopyStatus({ result: "failed", target });
     }
   }
 
   return (
     <section className="rounded-xl border border-line bg-card p-5 sm:p-6">
-      <h2 className="text-lg font-[650]">发布与访问</h2>
+      <h2 className="text-lg font-[650]">发布与嵌入</h2>
       {publiclyAvailable ? (
-        <div className="mt-5 rounded-lg border border-line bg-paper p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[13px] font-semibold">公开会话链接</p>
-              <p className="mt-1 text-[11px] text-ink-600">
-                访客无需账户即可开始匿名会话。
-              </p>
+        <div className="mt-5 space-y-4">
+          <div className="rounded-lg border border-line bg-paper p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[13px] font-semibold">公开会话链接</p>
+                <p className="mt-1 text-[11px] text-ink-600">
+                  访客无需账户即可开始匿名会话。
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => void copyText(publicUrl, "public")}
+                  type="button"
+                  variant="secondary"
+                >
+                  <Copy aria-hidden="true" />
+                  复制公开链接
+                </Button>
+                <Button asChild variant="secondary">
+                  <a href={publicUrl} rel="noreferrer" target="_blank">
+                    <ExternalLink aria-hidden="true" />
+                    打开公开页面
+                  </a>
+                </Button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <p className="mono mt-3 break-all rounded border border-line bg-card px-3 py-2 text-[12px] text-ink-600">
+              {publicUrl}
+            </p>
+            <CopyStatus status={copyStatus} target="public" />
+          </div>
+
+          <div className="rounded-lg border border-line bg-paper p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[13px] font-semibold">Iframe 嵌入代码</p>
+                <p className="mt-1 text-[11px] text-ink-600">
+                  粘贴到网站页面中，访客会在右下角看到悬浮入口。
+                </p>
+              </div>
               <Button
-                onClick={() => void copyPublicUrl()}
+                onClick={() => void copyText(embedCode, "embed")}
                 type="button"
                 variant="secondary"
               >
                 <Copy aria-hidden="true" />
-                复制公开链接
-              </Button>
-              <Button asChild variant="secondary">
-                <a href={publicUrl} rel="noreferrer" target="_blank">
-                  <ExternalLink aria-hidden="true" />
-                  打开公开页面
-                </a>
+                复制嵌入代码
               </Button>
             </div>
+            <Textarea
+              aria-label="Iframe 嵌入代码"
+              className="mono mt-3 min-h-20 resize-none bg-card text-[12px] text-ink-600"
+              readOnly
+              value={embedCode}
+            />
+            <CopyStatus status={copyStatus} target="embed" />
           </div>
-          <p className="mono mt-3 break-all rounded border border-line bg-card px-3 py-2 text-[12px] text-ink-600">
-            {publicUrl}
+
+          <p className="text-[11px] leading-5 text-ink-600">
+            保存设置与新知识版本会立即生效，无需重新复制代码。
           </p>
-          {copyStatus !== "idle" ? (
-            <p
-              className={cn(
-                "mt-2 text-[11px]",
-                copyStatus === "copied" ? "text-success" : "text-danger",
-              )}
-              role="status"
-            >
-              {copyStatus === "copied"
-                ? "公开链接已复制。"
-                : "无法自动复制，请手动复制链接。"}
-            </p>
-          ) : null}
         </div>
       ) : (
         <div className="mt-5 rounded-lg border border-line bg-paper p-4 text-[13px] text-ink-600">
@@ -469,6 +497,34 @@ function PublicationPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function CopyStatus({
+  status,
+  target,
+}: {
+  status: CopyStatusState | null;
+  target: "embed" | "public";
+}) {
+  if (status?.target !== target) {
+    return null;
+  }
+
+  const label = target === "embed" ? "嵌入代码" : "公开链接";
+
+  return (
+    <p
+      className={cn(
+        "mt-2 text-[11px]",
+        status.result === "copied" ? "text-success" : "text-danger",
+      )}
+      role="status"
+    >
+      {status.result === "copied"
+        ? `${label}已复制。`
+        : `无法自动复制，请手动复制${label}。`}
+    </p>
   );
 }
 

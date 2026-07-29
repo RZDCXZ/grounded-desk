@@ -6,7 +6,7 @@ import {
   Send,
   ShieldCheck,
 } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { BrandMark } from "@/components/admin/brand-mark";
 import { CitationList } from "@/components/assistant/citation-list";
@@ -44,20 +44,32 @@ type ConversationResult = {
 
 export function PublicConversation({
   assistant,
+  embedded = false,
   publicId,
 }: {
   assistant: PublicAssistant;
+  embedded?: boolean;
   publicId: string;
 }) {
   const [question, setQuestion] = useState("");
   const [conversationId, setConversationId] = useState<string>();
   const [results, setResults] = useState<ConversationResult[]>([]);
+  const messagesViewport = useRef<HTMLDivElement | null>(null);
   const requestController = useRef<AbortController | null>(null);
   const currentResult = results.at(-1);
   const requestPending = results.some(
     ({ status }) => status === "streaming",
   );
   const conversationLimited = currentResult?.status === "limit";
+
+  useEffect(() => {
+    if (!embedded || !messagesViewport.current) {
+      return;
+    }
+
+    messagesViewport.current.scrollTop =
+      messagesViewport.current.scrollHeight;
+  }, [embedded, results]);
 
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -237,8 +249,13 @@ export function PublicConversation({
   }
 
   return (
-    <main className="page-enter min-h-screen bg-paper">
-      <header className="border-b border-line bg-card">
+    <main
+      className={cn(
+        "page-enter bg-paper",
+        embedded ? "h-dvh overflow-hidden" : "min-h-screen",
+      )}
+    >
+      {!embedded ? <header className="border-b border-line bg-card">
         <div className="mx-auto flex min-h-16 max-w-3xl items-center justify-between gap-4 px-5 py-3">
           <BrandMark />
           <span className="inline-flex items-center gap-2 rounded-full border border-line bg-paper px-3 py-1 text-[11px] font-semibold text-ink-600">
@@ -249,11 +266,29 @@ export function PublicConversation({
             AI 助手
           </span>
         </div>
-      </header>
+      </header> : null}
 
-      <div className="mx-auto max-w-3xl px-4 py-6 sm:px-5 sm:py-10">
-        <section className="overflow-hidden rounded-xl border border-line bg-card">
-          <div className="bg-forest-950 px-5 py-6 text-white sm:px-7">
+      <div
+        className={cn(
+          "mx-auto max-w-3xl",
+          embedded ? "h-full p-0" : "px-4 py-6 sm:px-5 sm:py-10",
+        )}
+      >
+        <section
+          className={cn(
+            "overflow-hidden bg-card",
+            embedded
+              ? "flex h-full min-h-0 flex-col"
+              : "rounded-xl border border-line",
+          )}
+        >
+          <div
+            className={cn(
+              "bg-forest-950 px-5 py-6 text-white sm:px-7",
+              embedded && "shrink-0",
+            )}
+            data-testid="assistant-header"
+          >
             <div className="flex items-center gap-3">
               <AssistantIdentityMark />
               <div className="min-w-0">
@@ -267,7 +302,14 @@ export function PublicConversation({
             </div>
           </div>
 
-          <div className="space-y-5 bg-paper/70 p-4 sm:p-6">
+          <div
+            className={cn(
+              "space-y-5 bg-paper/70 p-4 sm:p-6",
+              embedded && "min-h-0 flex-1 overflow-y-auto",
+            )}
+            data-testid="conversation-scroll-region"
+            ref={messagesViewport}
+          >
             <div className="flex items-start gap-3">
               <AssistantIdentityMark tone="light" />
               <div className="max-w-[88%] rounded-xl rounded-tl-sm border border-line bg-card p-4 text-sm leading-6">
@@ -320,7 +362,11 @@ export function PublicConversation({
           </div>
 
           <form
-            className="border-t border-line bg-card p-4 sm:p-5"
+            className={cn(
+              "border-t border-line bg-card p-4 sm:p-5",
+              embedded && "shrink-0",
+            )}
+            data-testid="conversation-composer"
             onSubmit={submitQuestion}
           >
             <label

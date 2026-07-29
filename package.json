@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:embed-host": "node scripts/serve-embed-host.ts",
     "start": "next start",
     "build": "next build",
     "lint": "eslint .",

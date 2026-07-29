@@ -41,6 +41,16 @@ Supabase CLI 已固定为项目开发依赖，不需要全局安装。
 
 本地 Supabase Studio 位于 [http://127.0.0.1:54323](http://127.0.0.1:54323)。
 
+## 手动测试嵌入效果
+
+先保持 GroundedDesk 与本地 Supabase 正常运行，并在助手后台完成发布。另开一个终端启动独立宿主测试页：
+
+```bash
+pnpm dev:embed-host
+```
+
+访问 [http://127.0.0.1:4174](http://127.0.0.1:4174)，把助手后台“发布与嵌入”区域复制的代码粘贴到测试页并点击“加载悬浮入口”。测试页带有独立宿主样式和右下角人工联系入口，可用于检查悬浮入口避让、iframe 样式与脚本隔离、打开动效、匿名会话及引用。也可以在测试页填写公开助手 ID 自动生成嵌入代码。
+
 ## 自动化检查
 
 运行单个数据库验收文件：
@@ -86,7 +96,7 @@ pnpm eval:retrieval -- --json
 `.env.example` 明确区分两类配置：
 
 - `NEXT_PUBLIC_SUPABASE_URL` 与 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 可以进入浏览器包；数据库 RLS 是最终授权边界。
-- `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY`、`ADMIN_EMAIL` 和 `APP_URL` 仅供服务端使用，禁止添加 `NEXT_PUBLIC_` 前缀。
+- `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY`、`ADMIN_EMAIL`、`APP_URL` 和 `EMBED_APP_URL` 仅供服务端使用，禁止添加 `NEXT_PUBLIC_` 前缀；生产环境的 `EMBED_APP_URL` 必须使用与 `APP_URL` 不同的来源，以隔离 iframe 与宿主脚本。
 - `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 与 `RERANK_EVIDENCE_THRESHOLD` 是统一的服务端检索配置，由整组离线评测校准，不向管理员界面开放。
 - `PUBLIC_DAILY_MESSAGE_BUDGET` 控制公开助手每天最多接受的全局消息数；达到上限后不再调用模型，并向访客保留人工联系入口。
 - `PUBLIC_CONVERSATION_CONTEXT_MESSAGES` 控制追问最多携带的近期消息数；历史消息只用于理解追问，每个事实性问题仍会重新检索知识来源。

@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GroundedDesk 嵌入效果手动测试页</title>
+    <style>
+      :root {
+        --paper: #f7f7f3;
+        --surface: #ffffff;
+        --forest-950: #10291e;
+        --forest-800: #1a3c2b;
+        --forest-100: #dde9e1;
+        --ink-900: #202421;
+        --ink-600: #626a64;
+        --line: rgba(32, 36, 33, 0.14);
+        --line-strong: rgba(32, 36, 33, 0.26);
+        --success: #2f7a4c;
+        --success-light: #e6f3ea;
+        --danger: #b6413c;
+        --danger-light: #fbe7e5;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--paper);
+      }
+
+      body {
+        min-width: 320px;
+        margin: 0;
+        color: var(--ink-900);
+        background-color: var(--paper);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'%3E%3Cpath d='M48 0H0V48' fill='none' stroke='%23202421' stroke-opacity='.08'/%3E%3C/svg%3E");
+        background-size: 48px 48px;
+        font-family:
+          "Noto Sans SC", "PingFang SC", "Microsoft YaHei", Inter, sans-serif;
+        font-size: 14px;
+        line-height: 1.57;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--forest-800);
+        outline-offset: 2px;
+      }
+
+      .mono {
+        font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      }
+
+      .site-header {
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.94);
+      }
+
+      .site-header__inner,
+      .page {
+        width: min(1120px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .site-header__inner {
+        display: flex;
+        min-height: 64px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--forest-950);
+        font-size: 16px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .brand__mark {
+        display: grid;
+        width: 32px;
+        height: 32px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--forest-950);
+      }
+
+      .brand__mark::after {
+        width: 10px;
+        height: 10px;
+        border: 1px solid white;
+        content: "";
+      }
+
+      .site-nav {
+        display: flex;
+        gap: 20px;
+      }
+
+      .site-nav a {
+        color: var(--ink-600);
+        font-size: 13px;
+        text-decoration: none;
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+        gap: 28px;
+        padding: 48px 0 120px;
+      }
+
+      .hero,
+      .control-panel,
+      .content-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+      }
+
+      .hero {
+        padding: 40px;
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--forest-800);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 16em;
+        margin-bottom: 16px;
+        color: var(--forest-950);
+        font-size: clamp(28px, 4vw, 44px);
+        line-height: 1.22;
+      }
+
+      .hero__lead {
+        max-width: 58em;
+        margin-bottom: 0;
+        color: var(--ink-600);
+        font-size: 16px;
+        line-height: 1.8;
+      }
+
+      .content-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+      }
+
+      .content-card {
+        min-height: 180px;
+        padding: 24px;
+      }
+
+      .content-card h2,
+      .control-panel h2 {
+        margin-bottom: 8px;
+        color: var(--forest-950);
+        font-size: 18px;
+        line-height: 1.55;
+      }
+
+      .content-card p,
+      .control-panel__intro {
+        margin-bottom: 0;
+        color: var(--ink-600);
+      }
+
+      .control-panel {
+        align-self: start;
+        padding: 24px;
+        position: sticky;
+        top: 20px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        margin-top: 20px;
+      }
+
+      .field label {
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .field input,
+      .field textarea {
+        width: 100%;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        background: var(--paper);
+        color: var(--ink-900);
+        outline: none;
+      }
+
+      .field input {
+        height: 40px;
+        padding: 0 12px;
+      }
+
+      .field textarea {
+        min-height: 104px;
+        padding: 10px 12px;
+        resize: vertical;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .field input:focus,
+      .field textarea:focus {
+        border-color: var(--forest-800);
+      }
+
+      .field-help {
+        margin: 0;
+        color: var(--ink-600);
+        font-size: 11px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 20px;
+      }
+
+      .button {
+        min-height: 40px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 0 16px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .button--primary {
+        background: var(--forest-800);
+        color: white;
+      }
+
+      .button--primary:hover {
+        filter: brightness(0.94);
+      }
+
+      .button--secondary {
+        border-color: var(--line-strong);
+        background: white;
+        color: var(--ink-900);
+      }
+
+      .status {
+        min-height: 42px;
+        margin: 16px 0 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px 12px;
+        background: var(--paper);
+        color: var(--ink-600);
+        font-size: 12px;
+      }
+
+      .status[data-state="success"] {
+        border-color: rgba(47, 122, 76, 0.3);
+        background: var(--success-light);
+        color: var(--success);
+      }
+
+      .status[data-state="error"] {
+        border-color: rgba(182, 65, 60, 0.3);
+        background: var(--danger-light);
+        color: var(--danger);
+      }
+
+      details {
+        margin-top: 20px;
+        border-top: 1px solid var(--line);
+        padding-top: 16px;
+      }
+
+      summary {
+        color: var(--forest-800);
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .checklist {
+        margin: 12px 0 0;
+        padding-left: 20px;
+        color: var(--ink-600);
+        font-size: 12px;
+      }
+
+      .host-contact {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        z-index: 20;
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        padding: 0 16px;
+        background: white;
+        color: var(--forest-950);
+        font-weight: 650;
+        text-decoration: none;
+      }
+
+      @media (max-width: 840px) {
+        .site-nav {
+          display: none;
+        }
+
+        .page {
+          grid-template-columns: 1fr;
+          padding-top: 24px;
+        }
+
+        .control-panel {
+          grid-row: 1;
+          position: static;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .site-header__inner,
+        .page {
+          width: min(100% - 24px, 1120px);
+        }
+
+        .hero,
+        .control-panel,
+        .content-card {
+          padding: 20px;
+        }
+
+        .content-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .host-contact {
+          right: 16px;
+          bottom: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a class="brand" href="#">
+          <span class="brand__mark" aria-hidden="true"></span>
+          演示宿主网站
+        </a>
+        <nav class="site-nav" aria-label="演示网站导航">
+          <a href="#service">服务说明</a>
+          <a href="#process">合作流程</a>
+          <a href="mailto:host@example.com">直接联系</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      <div>
+        <section class="hero">
+          <p class="eyebrow mono">MANUAL EMBED HOST · 演示数据</p>
+          <h1>在一个真实宿主布局中检查悬浮助手</h1>
+          <p class="hero__lead">
+            这不是 GroundedDesk 应用页面。它具有独立的网格背景、排版、导航和固定联系方式，
+            用于肉眼确认嵌入入口不会污染宿主样式，且会话只在 iframe 内运行。
+          </p>
+        </section>
+
+        <div class="content-grid">
+          <article class="content-card" id="service">
+            <h2>演示服务说明</h2>
+            <p>
+              此处是宿主网站主体内容。打开助手前后，字体、颜色、间距与卡片边界都应保持不变。
+            </p>
+          </article>
+          <article class="content-card" id="process">
+            <h2>演示合作流程</h2>
+            <p>
+              右下角“宿主人工联系”是故意放置的冲突入口，悬浮助手应自动向上避让，而不是覆盖它。
+            </p>
+          </article>
+        </div>
+      </div>
+
+      <aside class="control-panel" aria-labelledby="control-title">
+        <h2 id="control-title">加载嵌入代码</h2>
+        <p class="control-panel__intro">
+          推荐直接粘贴助手后台“发布与嵌入”区域复制的代码。
+        </p>
+
+        <div class="field">
+          <label for="embed-code">后台嵌入代码</label>
+          <textarea
+            class="mono"
+            id="embed-code"
+            placeholder='<script async src="http://127.0.0.1:3000/api/public/assistants/…/embed.js"></script>'
+            spellcheck="false"
+          ></textarea>
+          <p class="field-help">只会读取 script 的 src，不会执行粘贴内容中的其他标记。</p>
+        </div>
+
+        <details>
+          <summary>也可以用公开助手 ID 生成</summary>
+          <div class="field">
+            <label for="app-origin">GroundedDesk 应用地址</label>
+            <input
+              class="mono"
+              id="app-origin"
+              type="url"
+              value="http://127.0.0.1:3000"
+            />
+          </div>
+          <div class="field">
+            <label for="public-id">公开助手 ID</label>
+            <input
+              class="mono"
+              id="public-id"
+              placeholder="00000000-0000-0000-0000-000000000000"
+              type="text"
+            />
+          </div>
+          <div class="actions">
+            <button class="button button--secondary" id="build-code" type="button">
+              生成嵌入代码
+            </button>
+          </div>
+        </details>
+
+        <div class="actions">
+          <button class="button button--primary" id="load-embed" type="button">
+            加载悬浮入口
+          </button>
+          <button class="button button--secondary" id="reload-page" type="button">
+            重置测试页
+          </button>
+        </div>
+
+        <p class="status" data-state="idle" id="status" role="status">
+          等待嵌入代码。
+        </p>
+
+        <details>
+          <summary>建议检查项目</summary>
+          <ol class="checklist">
+            <li>悬浮入口出现在右下角，但不覆盖“宿主人工联系”。</li>
+            <li>打开和关闭面板时有轻微上移、缩放动效。</li>
+            <li>面板内显示正确的助手名称、欢迎语和服务范围。</li>
+            <li>提交问题后能看到有据回答与引用，或正确的可靠拒答。</li>
+            <li>宿主页网格、字体和卡片样式始终不变。</li>
+            <li>在助手下线后重置本页，嵌入脚本应加载失败。</li>
+          </ol>
+        </details>
+      </aside>
+    </main>
+
+    <a class="host-contact" href="mailto:host@example.com">
+      宿主人工联系
+    </a>
+
+    <script>
+      const embedCode = document.querySelector("#embed-code");
+      const appOrigin = document.querySelector("#app-origin");
+      const publicId = document.querySelector("#public-id");
+      const status = document.querySelector("#status");
+      const loadButton = document.querySelector("#load-embed");
+      const buildButton = document.querySelector("#build-code");
+      const reloadButton = document.querySelector("#reload-page");
+
+      const requestedPublicId = new URLSearchParams(location.search).get(
+        "publicId",
+      );
+      if (requestedPublicId) {
+        publicId.value = requestedPublicId;
+        buildEmbedCode();
+      }
+
+      buildButton.addEventListener("click", buildEmbedCode);
+      loadButton.addEventListener("click", loadEmbed);
+      reloadButton.addEventListener("click", () => location.reload());
+
+      function buildEmbedCode() {
+        try {
+          const origin = new URL(appOrigin.value.trim()).origin;
+          const id = publicId.value.trim();
+
+          if (
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              id,
+            )
+          ) {
+            throw new Error("请输入后台公开链接中的完整公开助手 ID。");
+          }
+
+          embedCode.value =
+            '<script async src="' +
+            origin +
+            "/api/public/assistants/" +
+            encodeURIComponent(id) +
+            '/embed.js"><\/script>';
+          setStatus("嵌入代码已生成，可以加载悬浮入口。", "success");
+        } catch (error) {
+          setStatus(error.message || "无法生成嵌入代码。", "error");
+        }
+      }
+
+      function loadEmbed() {
+        try {
+          const source = extractScriptSource(embedCode.value);
+          const existingScript = document.querySelector(
+            "#groundeddesk-manual-embed-script",
+          );
+          const existingMount = document.querySelector(
+            '[id^="groundeddesk-embed-"]',
+          );
+          existingScript?.remove();
+          existingMount?.remove();
+
+          const script = document.createElement("script");
+          script.async = true;
+          script.id = "groundeddesk-manual-embed-script";
+          script.src = source;
+          script.addEventListener("load", () => {
+            setStatus(
+              "嵌入脚本已加载。请使用右下角悬浮入口开始测试。",
+              "success",
+            );
+          });
+          script.addEventListener("error", () => {
+            setStatus(
+              "嵌入脚本加载失败。请确认应用正在运行，且助手处于已发布状态。",
+              "error",
+            );
+          });
+          document.head.append(script);
+          setStatus("正在加载嵌入脚本…", "idle");
+        } catch (error) {
+          setStatus(error.message || "无法读取嵌入代码。", "error");
+        }
+      }
+
+      function extractScriptSource(value) {
+        const parsed = new DOMParser().parseFromString(value, "text/html");
+        const source = parsed.querySelector("script[src]")?.getAttribute("src");
+
+        if (!source) {
+          throw new Error("请粘贴包含 src 的完整 script 嵌入代码。");
+        }
+
+        const url = new URL(source, location.href);
+        if (
+          !["http:", "https:"].includes(url.protocol) ||
+          !url.pathname.endsWith("/embed.js")
+        ) {
+          throw new Error("嵌入脚本地址必须使用 HTTP(S) 并以 /embed.js 结尾。");
+        }
+
+        return url.href;
+      }
+
+      function setStatus(message, state) {
+        status.textContent = message;
+        status.dataset.state = state;
+      }
+    </script>
+  </body>
+</html>

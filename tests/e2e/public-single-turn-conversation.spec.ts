@@ -55,6 +55,7 @@ async function signInAsAdministrator(page: Page, request: APIRequestContext) {
 }
 
 test("管理员发布后访客可匿名连续咨询、重试并在下线后停止服务", async ({
+  context,
   page,
   request,
 }) => {
@@ -67,6 +68,7 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
 
   await expect(page.getByText("草稿", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("公开会话链接")).toHaveCount(0);
+  await expect(page.getByLabel("Iframe 嵌入代码")).toHaveCount(0);
 
   await page.getByLabel("助手名称").fill("演示业务顾问");
   await page
@@ -119,6 +121,19 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
   await expect(
     page.getByRole("button", { name: "复制公开链接" }),
   ).toBeVisible();
+  const embedCodeField = page.getByLabel("Iframe 嵌入代码");
+  await expect(embedCodeField).toBeVisible();
+  const embedCode = await embedCodeField.inputValue();
+  const embedScriptUrl = embedCode.match(/src="([^"]+embed\.js)"/)?.[1];
+  expect(embedScriptUrl).toBeDefined();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: "http://127.0.0.1:3000",
+  });
+  await page.getByRole("button", { name: "复制嵌入代码" }).click();
+  await expect(page.getByRole("status")).toContainText("嵌入代码已复制");
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(embedCode);
 
   await page.goto(publicPath);
   await expect(
@@ -165,6 +180,135 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
     page.getByRole("link", { name: new RegExp(sourceTitle) }),
   ).toHaveAttribute("href", "https://example.com/public-services");
 
+  const hostPage = await context.newPage();
+  await hostPage.goto("/");
+  await hostPage.setContent(`
+    <!doctype html>
+    <html lang="zh-CN">
+      <head>
+        <style>
+          body { margin: 0; background: rgb(245, 240, 230); color: rgb(120, 20, 20); }
+          .host-contact { position: fixed; right: 24px; bottom: 24px; }
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>受控宿主页面</h1>
+          <p>宿主页面主体内容保持可见。</p>
+          <a class="host-contact" href="mailto:host@example.com">宿主直接联系方式</a>
+        </main>
+      </body>
+    </html>
+  `);
+  await hostPage.evaluate(async (scriptUrl) => {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.async = true;
+      script.src = scriptUrl;
+      script.addEventListener("load", () => resolve());
+      script.addEventListener("error", () =>
+        reject(new Error("嵌入脚本加载失败")),
+      );
+      document.head.append(script);
+    });
+  }, embedScriptUrl!);
+
+  await expect(
+    hostPage.getByRole("button", { name: "打开演示业务顾问" }),
+  ).toBeVisible();
+  await expect(
+    hostPage.getByRole("heading", { name: "受控宿主页面" }),
+  ).toBeVisible();
+  await expect(
+    hostPage.getByRole("link", { name: "宿主直接联系方式" }),
+  ).toBeVisible();
+  const launcherBox = await hostPage
+    .getByRole("button", { name: "打开演示业务顾问" })
+    .boundingBox();
+  const hostContactBox = await hostPage
+    .getByRole("link", { name: "宿主直接联系方式" })
+    .boundingBox();
+  expect(launcherBox).not.toBeNull();
+  expect(hostContactBox).not.toBeNull();
+  expect(
+    rectanglesOverlap(launcherBox!, hostContactBox!),
+    "悬浮入口不应遮挡宿主右下角已有的直接联系方式",
+  ).toBe(false);
+  await expect
+    .poll(() =>
+      hostPage.evaluate(() => getComputedStyle(document.body).color),
+    )
+    .toBe("rgb(120, 20, 20)");
+
+  await hostPage
+    .getByRole("button", { name: "打开演示业务顾问" })
+    .click();
+  const embeddedConversation = hostPage.frameLocator(
+    'iframe[title="演示业务顾问会话"]',
+  );
+  await expect(
+    embeddedConversation.getByRole("heading", { name: "演示业务顾问" }),
+  ).toBeVisible();
+  const hostCanReadIframeDocument = await hostPage
+    .locator('iframe[title="演示业务顾问会话"]')
+    .evaluate((frame) => {
+      try {
+        return Boolean((frame as HTMLIFrameElement).contentDocument);
+      } catch {
+        return false;
+      }
+    });
+  expect(hostCanReadIframeDocument).toBe(false);
+  await embeddedConversation
+    .getByLabel("咨询问题")
+    .fill(`${sourceMarker} 嵌入入口提供什么服务？`);
+  await embeddedConversation
+    .getByRole("button", { name: "发送问题" })
+    .click();
+  await expect(
+    embeddedConversation.getByText(/根据当前可用知识/),
+  ).toBeVisible();
+  await expect(
+    embeddedConversation.getByRole("link", {
+      name: new RegExp(sourceTitle),
+    }),
+  ).toHaveAttribute("href", "https://example.com/public-services");
+  const embeddedScrollMetrics = await embeddedConversation
+    .getByTestId("conversation-scroll-region")
+    .evaluate((region) => {
+      const documentElement = document.documentElement;
+      const composer = document.querySelector(
+        '[data-testid="conversation-composer"]',
+      );
+      const assistantHeader = document.querySelector(
+        '[data-testid="assistant-header"]',
+      );
+
+      return {
+        documentScrolls:
+          documentElement.scrollHeight > documentElement.clientHeight + 1,
+        messageRegionScrolls:
+          region.scrollHeight > region.clientHeight + 1,
+        composerBottom: composer?.getBoundingClientRect().bottom,
+        headerTop: assistantHeader?.getBoundingClientRect().top,
+        viewportHeight: window.innerHeight,
+      };
+    });
+  expect(embeddedScrollMetrics.documentScrolls).toBe(false);
+  expect(embeddedScrollMetrics.messageRegionScrolls).toBe(true);
+  expect(embeddedScrollMetrics.headerTop).toBe(0);
+  expect(embeddedScrollMetrics.composerBottom).toBe(
+    embeddedScrollMetrics.viewportHeight,
+  );
+  await expect(
+    hostPage.getByRole("heading", { name: "受控宿主页面" }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      hostPage.evaluate(() => getComputedStyle(document.body).color),
+    )
+    .toBe("rgb(120, 20, 20)");
+  await hostPage.close();
   await page.getByLabel("咨询问题").fill("它包含实施支持吗？");
   await page.getByRole("button", { name: "发送问题" }).click();
   await expect(
@@ -402,9 +546,23 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
     },
   );
   expect(messageResponse.status()).toBe(404);
+  const embedScriptResponse = await request.get(embedScriptUrl!);
+  expect(embedScriptResponse.status()).toBe(404);
 
   await page.goto(publicPath);
   await expect(
     page.getByText("该助手当前不可公开访问。", { exact: true }),
   ).toBeVisible();
 });
+
+function rectanglesOverlap(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number },
+) {
+  return !(
+    first.x + first.width <= second.x ||
+    second.x + second.width <= first.x ||
+    first.y + first.height <= second.y ||
+    second.y + second.height <= first.y
+  );
+}

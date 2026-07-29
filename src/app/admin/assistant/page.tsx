@@ -6,6 +6,7 @@ import { AssistantBusinessConfigurationForm } from "./assistant-business-configu
 
 export default async function AssistantConfigurationPage() {
   const { supabase, organization } = await requireAdministrator();
+  const applicationUrl = getApplicationUrl();
   const { data, error } = await supabase
     .from("assistants")
     .select(
@@ -21,9 +22,14 @@ export default async function AssistantConfigurationPage() {
   return (
     <AssistantBusinessConfigurationForm
       assistant={data as AssistantBusinessConfigurationRecord}
+      embedScriptUrl={
+        data.public_id
+          ? `${applicationUrl}/api/public/assistants/${data.public_id}/embed.js`
+          : null
+      }
       publicUrl={
         data.public_id
-          ? `${getApplicationUrl()}/a/${data.public_id}`
+          ? `${applicationUrl}/a/${data.public_id}`
           : null
       }
     />

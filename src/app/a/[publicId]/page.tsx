@@ -18,10 +18,13 @@ export const dynamic = "force-dynamic";
 
 export default async function PublicAssistantPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ publicId: string }>;
+  searchParams: Promise<{ embedded?: string }>;
 }) {
   const { publicId } = await params;
+  const { embedded } = await searchParams;
   const supabase = createPrivilegedSupabaseClient();
   const { data, error } = await supabase.rpc("get_published_assistant", {
     assistant_public_id: publicId,
@@ -35,6 +38,7 @@ export default async function PublicAssistantPage({
   return (
     <PublicConversation
       assistant={assistant}
+      embedded={embedded === "1"}
       publicId={publicId}
     />
   );
