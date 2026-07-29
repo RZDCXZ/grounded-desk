@@ -66,3 +66,31 @@ export async function updateAssistantBusinessConfiguration(
     message: "助手配置已保存。",
   };
 }
+
+export async function publishAssistant() {
+  const { supabase } = await requireAdministrator();
+  const { error } = await supabase.rpc("publish_assistant");
+
+  if (error) {
+    throw new Error("暂时无法发布助手，请稍后重试。", {
+      cause: error,
+    });
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/assistant");
+}
+
+export async function takeAssistantOffline() {
+  const { supabase } = await requireAdministrator();
+  const { error } = await supabase.rpc("take_assistant_offline");
+
+  if (error) {
+    throw new Error("暂时无法下线助手，请稍后重试。", {
+      cause: error,
+    });
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/assistant");
+}

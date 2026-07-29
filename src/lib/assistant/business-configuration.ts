@@ -15,6 +15,7 @@ export type AssistantBusinessConfigurationRecord = {
   human_contact_label: string;
   human_contact_url: string;
   status: "draft" | "published" | "offline";
+  public_id: string | null;
 };
 
 export type AssistantBusinessConfigurationValues = {

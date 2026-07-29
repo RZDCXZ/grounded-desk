@@ -27,6 +27,26 @@ type RetrievedContentUnitRow = {
 export function createSupabaseGroundedAnswerDependencies(
   supabase: SupabaseClient,
 ) {
+  return createConfiguredDependencies(
+    createCandidateRepository(supabase),
+    createCallLogger(supabase),
+  );
+}
+
+export function createPublicSupabaseGroundedAnswerDependencies(
+  supabase: SupabaseClient,
+  assistantPublicId: string,
+) {
+  return createConfiguredDependencies(
+    createPublicCandidateRepository(supabase, assistantPublicId),
+    createPublicCallLogger(supabase, assistantPublicId),
+  );
+}
+
+function createConfiguredDependencies(
+  candidateRepository: ReturnType<typeof createCandidateRepository>,
+  callLogger: ReturnType<typeof createCallLogger>,
+) {
   const embeddingProvider = getKnowledgeEmbeddingProviderWithMetadata();
   const retrievalConfig = readRetrievalConfig();
 
@@ -48,10 +68,10 @@ export function createSupabaseGroundedAnswerDependencies(
         };
       },
     },
-    candidateRepository: createCandidateRepository(supabase),
+    candidateRepository,
     rerankingProvider: getGroundedAnswerRerankingProvider(),
     answerProvider: getGroundedAnswerGenerationProvider(),
-    callLogger: createCallLogger(supabase),
+    callLogger,
     rateLimitRetry: {
       delayMs: readIntegerServerConfig(
         process.env,
@@ -100,6 +120,44 @@ function createCandidateRepository(supabase: SupabaseClient) {
   };
 }
 
+function createPublicCandidateRepository(
+  supabase: SupabaseClient,
+  assistantPublicId: string,
+) {
+  return {
+    async retrieve(
+      _organizationId: string,
+      embedding: number[],
+      limit: number,
+    ): Promise<RetrievedContentUnit[]> {
+      const { data, error } = await supabase.rpc(
+        "retrieve_public_assistant_content_units",
+        {
+          assistant_public_id: assistantPublicId,
+          query_embedding: embedding,
+          candidate_limit: limit,
+        },
+      );
+
+      if (error) {
+        throw new Error("无法召回公开助手的可用内容单元", {
+          cause: error,
+        });
+      }
+
+      return ((data ?? []) as RetrievedContentUnitRow[]).map((row) => ({
+        id: row.content_unit_id,
+        knowledgeSourceId: row.knowledge_source_id,
+        sourceTitle: row.source_title,
+        sourceUrl: row.source_url,
+        heading: row.heading,
+        content: row.content,
+        similarity: row.similarity,
+      }));
+    },
+  };
+}
+
 function createCallLogger(supabase: SupabaseClient) {
   return {
     async record(log: AiCallLog) {
@@ -119,6 +177,38 @@ function createCallLogger(supabase: SupabaseClient) {
 
       if (error) {
         throw new Error("无法记录供应商调用元数据", { cause: error });
+      }
+    },
+  };
+}
+
+function createPublicCallLogger(
+  supabase: SupabaseClient,
+  assistantPublicId: string,
+) {
+  return {
+    async record(log: AiCallLog) {
+      const { error } = await supabase.rpc(
+        "record_public_assistant_ai_call",
+        {
+          assistant_public_id: assistantPublicId,
+          logged_call_type: log.callType,
+          logged_provider: log.provider,
+          logged_model: log.model,
+          logged_input_tokens: log.inputTokens,
+          logged_output_tokens: log.outputTokens,
+          logged_total_tokens: log.totalTokens,
+          logged_duration_ms: log.durationMs,
+          logged_outcome: log.outcome,
+          logged_error_type: log.errorType,
+          logged_trace_id: log.traceId,
+        },
+      );
+
+      if (error) {
+        throw new Error("无法记录公开助手供应商调用元数据", {
+          cause: error,
+        });
       }
     },
   };

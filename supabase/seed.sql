@@ -114,7 +114,7 @@ insert into public.assistants (
   '联系人工',
   'mailto:admin@groundeddesk.local',
   'draft',
-  '00000000-0000-4000-8000-000000000301',
+  null,
   '2026-01-01 00:00:00+00',
   '2026-01-01 00:00:00+00'
 );

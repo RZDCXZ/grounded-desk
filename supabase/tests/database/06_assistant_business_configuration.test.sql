@@ -53,10 +53,10 @@ select results_eq(
   'saving business configuration does not publish a draft assistant'
 );
 
-select results_eq(
-  $$ select public_id::text from public.assistants $$,
-  array['00000000-0000-4000-8000-000000000301'],
-  'saving business configuration does not replace the assistant public identifier'
+select is(
+  (select public_id from public.assistants),
+  null::uuid,
+  'saving business configuration does not create a public identifier'
 );
 
 select throws_ok(

@@ -1,5 +1,6 @@
 import { requireAdministrator } from "@/lib/auth/require-admin";
 import type { AssistantBusinessConfigurationRecord } from "@/lib/assistant/business-configuration";
+import { getApplicationUrl } from "@/lib/server-config";
 
 import { AssistantBusinessConfigurationForm } from "./assistant-business-configuration-form";
 
@@ -8,7 +9,7 @@ export default async function AssistantConfigurationPage() {
   const { data, error } = await supabase
     .from("assistants")
     .select(
-      "id, name, welcome_message, service_scope, tone, human_contact_label, human_contact_url, status",
+      "id, name, welcome_message, service_scope, tone, human_contact_label, human_contact_url, status, public_id",
     )
     .eq("organization_id", organization.id)
     .single();
@@ -20,6 +21,11 @@ export default async function AssistantConfigurationPage() {
   return (
     <AssistantBusinessConfigurationForm
       assistant={data as AssistantBusinessConfigurationRecord}
+      publicUrl={
+        data.public_id
+          ? `${getApplicationUrl()}/a/${data.public_id}`
+          : null
+      }
     />
   );
 }

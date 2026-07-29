@@ -31,3 +31,25 @@ export function readNumberServerConfig(
 
   return value;
 }
+
+export function getApplicationUrl(
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  const configuredUrl =
+    environment.APP_URL ??
+    (environment.NODE_ENV === "production"
+      ? undefined
+      : "http://127.0.0.1:3000");
+
+  if (!configuredUrl) {
+    throw new Error("缺少生产环境变量 APP_URL");
+  }
+
+  const url = new URL(configuredUrl);
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("服务端配置 APP_URL 必须使用 HTTP 或 HTTPS");
+  }
+
+  return url.origin;
+}

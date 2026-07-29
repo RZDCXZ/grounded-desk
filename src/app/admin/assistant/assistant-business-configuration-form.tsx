@@ -2,8 +2,8 @@
 
 import {
   CheckCircle2,
+  Copy,
   ExternalLink,
-  FileText,
   Info,
   MessageCircle,
   Send,
@@ -17,9 +17,11 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { useFormStatus } from "react-dom";
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatusBadge, type Status } from "@/components/admin/status-badge";
+import { CitationList } from "@/components/assistant/citation-list";
 import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,9 +40,14 @@ import {
   type AssistantTone,
 } from "@/lib/assistant/business-configuration";
 import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
+import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
 import { cn } from "@/lib/utils";
 
-import { updateAssistantBusinessConfiguration } from "./actions";
+import {
+  publishAssistant,
+  takeAssistantOffline,
+  updateAssistantBusinessConfiguration,
+} from "./actions";
 
 const initialActionState: AssistantBusinessConfigurationActionState = {
   status: "idle",
@@ -63,34 +70,6 @@ type PreviewResult = {
     url: string;
   };
 };
-
-type PreviewStreamEvent =
-  | {
-      type: "text_delta";
-      delta: string;
-    }
-  | {
-      type: "complete";
-      citations: GroundedCitation[];
-    }
-  | {
-      type: "refusal";
-      message: string;
-      contact: {
-        label: string;
-        url: string;
-      };
-    }
-  | {
-      type: "temporary_failure";
-      reason: "input_rejected" | "rate_limited" | "provider_failure";
-      message: string;
-      retryable: true;
-      contact: {
-        label: string;
-        url: string;
-      };
-    };
 
 const toneOptions: Array<{
   value: AssistantTone;
@@ -116,8 +95,10 @@ const toneOptions: Array<{
 
 export function AssistantBusinessConfigurationForm({
   assistant,
+  publicUrl,
 }: {
   assistant: AssistantBusinessConfigurationRecord;
+  publicUrl: string | null;
 }) {
   const [actionState, formAction, pending] = useActionState(
     updateAssistantBusinessConfiguration,
@@ -149,6 +130,7 @@ export function AssistantBusinessConfigurationForm({
         actions={
           <>
             <StatusBadge status={assistant.status} />
+            <PublicationAction status={assistant.status} />
             <Button
               disabled={pending}
               form="assistant-business-configuration"
@@ -163,95 +145,96 @@ export function AssistantBusinessConfigurationForm({
       />
 
       <div className="mx-auto grid max-w-300 gap-7 p-5 sm:p-8 xl:grid-cols-12">
-        <form
-          action={formAction}
-          className="space-y-6 xl:col-span-7"
-          id="assistant-business-configuration"
-          noValidate
-        >
-          {actionState.status !== "idle" ? (
-            <div
-              className={cn(
-                "flex items-start gap-3 rounded-lg border p-4 text-[13px]",
-                actionState.status === "success"
-                  ? "border-success/30 bg-success-light text-success"
-                  : "border-danger/30 bg-danger-light text-danger",
-              )}
-              role={actionState.status === "success" ? "status" : "alert"}
-            >
-              {actionState.status === "success" ? (
-                <CheckCircle2
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0"
-                />
-              ) : (
-                <Info
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0"
-                />
-              )}
-              <p>{actionState.message}</p>
-            </div>
-          ) : null}
-
-          <ConfigurationSection
-            icon={UserCog}
-            title="基础信息"
+        <div className="space-y-6 xl:col-span-7">
+          <form
+            action={formAction}
+            className="space-y-6"
+            id="assistant-business-configuration"
+            noValidate
           >
-            <Field invalid={Boolean(errors.name)}>
-              <FieldLabel>助手名称</FieldLabel>
-              <Input
-                maxLength={80}
-                name="name"
-                onChange={(event) => updateValue("name", event.target.value)}
-                placeholder="访客看到的助手身份名称"
-                required
-                value={values.name}
-              />
-              <FieldDescription>显示在访客会话顶部。</FieldDescription>
-              {errors.name ? <FieldError>{errors.name}</FieldError> : null}
-            </Field>
+            {actionState.status !== "idle" ? (
+              <div
+                className={cn(
+                  "flex items-start gap-3 rounded-lg border p-4 text-[13px]",
+                  actionState.status === "success"
+                    ? "border-success/30 bg-success-light text-success"
+                    : "border-danger/30 bg-danger-light text-danger",
+                )}
+                role={actionState.status === "success" ? "status" : "alert"}
+              >
+                {actionState.status === "success" ? (
+                  <CheckCircle2
+                    aria-hidden="true"
+                    className="mt-0.5 size-4 shrink-0"
+                  />
+                ) : (
+                  <Info
+                    aria-hidden="true"
+                    className="mt-0.5 size-4 shrink-0"
+                  />
+                )}
+                <p>{actionState.message}</p>
+              </div>
+            ) : null}
 
-            <Field invalid={Boolean(errors.welcomeMessage)}>
-              <FieldLabel>欢迎语</FieldLabel>
-              <Textarea
-                className="min-h-24"
-                maxLength={500}
-                name="welcomeMessage"
-                onChange={(event) =>
-                  updateValue("welcomeMessage", event.target.value)
-                }
-                placeholder="访客开始会话时看到的第一句话"
-                required
-                value={values.welcomeMessage}
-              />
-              {errors.welcomeMessage ? (
-                <FieldError>{errors.welcomeMessage}</FieldError>
-              ) : null}
-            </Field>
+            <ConfigurationSection
+              icon={UserCog}
+              title="基础信息"
+            >
+              <Field invalid={Boolean(errors.name)}>
+                <FieldLabel>助手名称</FieldLabel>
+                <Input
+                  maxLength={80}
+                  name="name"
+                  onChange={(event) => updateValue("name", event.target.value)}
+                  placeholder="访客看到的助手身份名称"
+                  required
+                  value={values.name}
+                />
+                <FieldDescription>显示在访客会话顶部。</FieldDescription>
+                {errors.name ? <FieldError>{errors.name}</FieldError> : null}
+              </Field>
 
-            <Field invalid={Boolean(errors.serviceScope)}>
-              <FieldLabel>服务范围说明</FieldLabel>
-              <Textarea
-                maxLength={1000}
-                name="serviceScope"
-                onChange={(event) =>
-                  updateValue("serviceScope", event.target.value)
-                }
-                placeholder="说明助手可以处理哪些咨询"
-                required
-                value={values.serviceScope}
-              />
-              <FieldDescription>
-                使用清楚的业务边界，帮助访客判断是否适合继续咨询。
-              </FieldDescription>
-              {errors.serviceScope ? (
-                <FieldError>{errors.serviceScope}</FieldError>
-              ) : null}
-            </Field>
-          </ConfigurationSection>
+              <Field invalid={Boolean(errors.welcomeMessage)}>
+                <FieldLabel>欢迎语</FieldLabel>
+                <Textarea
+                  className="min-h-24"
+                  maxLength={500}
+                  name="welcomeMessage"
+                  onChange={(event) =>
+                    updateValue("welcomeMessage", event.target.value)
+                  }
+                  placeholder="访客开始会话时看到的第一句话"
+                  required
+                  value={values.welcomeMessage}
+                />
+                {errors.welcomeMessage ? (
+                  <FieldError>{errors.welcomeMessage}</FieldError>
+                ) : null}
+              </Field>
 
-          <ConfigurationSection icon={MessageCircle} title="沟通方式">
+              <Field invalid={Boolean(errors.serviceScope)}>
+                <FieldLabel>服务范围说明</FieldLabel>
+                <Textarea
+                  maxLength={1000}
+                  name="serviceScope"
+                  onChange={(event) =>
+                    updateValue("serviceScope", event.target.value)
+                  }
+                  placeholder="说明助手可以处理哪些咨询"
+                  required
+                  value={values.serviceScope}
+                />
+                <FieldDescription>
+                  使用清楚的业务边界，帮助访客判断是否适合继续咨询。
+                </FieldDescription>
+                {errors.serviceScope ? (
+                  <FieldError>{errors.serviceScope}</FieldError>
+                ) : null}
+              </Field>
+            </ConfigurationSection>
+
+            <ConfigurationSection icon={MessageCircle} title="沟通方式">
             <Field invalid={Boolean(errors.tone)}>
               <fieldset>
                 <legend className="text-[13px] leading-5 font-semibold">
@@ -337,21 +320,27 @@ export function AssistantBusinessConfigurationForm({
                 ) : null}
               </Field>
             </div>
-          </ConfigurationSection>
+            </ConfigurationSection>
 
-          <div className="flex items-start gap-3 rounded-xl border border-info/25 bg-info-light p-4 text-[13px] text-ink-600">
-            <ShieldCheck
-              aria-hidden="true"
-              className="mt-0.5 size-5 shrink-0 text-info"
-            />
-            <div>
-              <p className="font-medium text-ink-900">配置边界</p>
-              <p className="mt-1">
-                本页只配置访客可见内容；技术与安全设置由系统统一管理。
-              </p>
+            <div className="flex items-start gap-3 rounded-xl border border-info/25 bg-info-light p-4 text-[13px] text-ink-600">
+              <ShieldCheck
+                aria-hidden="true"
+                className="mt-0.5 size-5 shrink-0 text-info"
+              />
+              <div>
+                <p className="font-medium text-ink-900">配置边界</p>
+                <p className="mt-1">
+                  本页只配置访客可见内容；技术与安全设置由系统统一管理。
+                </p>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+
+          <PublicationPanel
+            publicUrl={publicUrl}
+            status={assistant.status}
+          />
+        </div>
 
         <AssistantPreview
           status={assistant.status}
@@ -359,6 +348,127 @@ export function AssistantBusinessConfigurationForm({
         />
       </div>
     </main>
+  );
+}
+
+function PublicationAction({
+  status,
+}: {
+  status: AssistantBusinessConfigurationRecord["status"];
+}) {
+  const action =
+    status === "published" ? takeAssistantOffline : publishAssistant;
+
+  return (
+    <form action={action}>
+      <PublicationSubmitButton status={status} />
+    </form>
+  );
+}
+
+function PublicationSubmitButton({
+  status,
+}: {
+  status: AssistantBusinessConfigurationRecord["status"];
+}) {
+  const { pending } = useFormStatus();
+  const label =
+    status === "published"
+      ? "下线助手"
+      : status === "offline"
+        ? "重新发布助手"
+        : "发布助手";
+
+  return (
+    <Button
+      disabled={pending}
+      type="submit"
+      variant={status === "published" ? "destructive" : "secondary"}
+    >
+      {pending ? "正在更新…" : label}
+    </Button>
+  );
+}
+
+function PublicationPanel({
+  publicUrl,
+  status,
+}: {
+  publicUrl: string | null;
+  status: AssistantBusinessConfigurationRecord["status"];
+}) {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+  const publiclyAvailable = status === "published" && publicUrl;
+
+  async function copyPublicUrl() {
+    if (!publicUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-line bg-card p-5 sm:p-6">
+      <h2 className="text-lg font-[650]">发布与访问</h2>
+      {publiclyAvailable ? (
+        <div className="mt-5 rounded-lg border border-line bg-paper p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-semibold">公开会话链接</p>
+              <p className="mt-1 text-[11px] text-ink-600">
+                访客无需账户即可开始匿名会话。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => void copyPublicUrl()}
+                type="button"
+                variant="secondary"
+              >
+                <Copy aria-hidden="true" />
+                复制公开链接
+              </Button>
+              <Button asChild variant="secondary">
+                <a href={publicUrl} rel="noreferrer" target="_blank">
+                  <ExternalLink aria-hidden="true" />
+                  打开公开页面
+                </a>
+              </Button>
+            </div>
+          </div>
+          <p className="mono mt-3 break-all rounded border border-line bg-card px-3 py-2 text-[12px] text-ink-600">
+            {publicUrl}
+          </p>
+          {copyStatus !== "idle" ? (
+            <p
+              className={cn(
+                "mt-2 text-[11px]",
+                copyStatus === "copied" ? "text-success" : "text-danger",
+              )}
+              role="status"
+            >
+              {copyStatus === "copied"
+                ? "公开链接已复制。"
+                : "无法自动复制，请手动复制链接。"}
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-lg border border-line bg-paper p-4 text-[13px] text-ink-600">
+          {status === "draft"
+            ? "草稿助手尚无公开入口，首次发布时会生成固定公开 ID。"
+            : "助手已下线，原公开链接暂时不可访问；重新发布会继续使用原链接。"}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -447,7 +557,7 @@ function AssistantPreview({
         throw new Error(payload?.message ?? "暂时无法完成预览，请稍后重试。");
       }
 
-      await consumePreviewStream(response.body, (streamEvent) => {
+      await consumeAssistantResponseStream(response.body, (streamEvent) => {
         if (streamEvent.type === "text_delta") {
           setResult((current) => ({
             ...current,
@@ -704,90 +814,6 @@ function temporaryFailureLabel(reason: PreviewResult["failureReason"]) {
     rate_limited: "供应商限流",
     provider_failure: "供应商故障",
   }[reason ?? "provider_failure"];
-}
-
-function CitationList({ citations }: { citations: GroundedCitation[] }) {
-  return (
-    <div className="mt-4 border-t border-line pt-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-[11px] font-semibold text-ink-600">回答依据</p>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-success-light px-2 py-0.5 text-[10px] font-semibold text-success">
-          <span aria-hidden="true" className="size-1.5 rounded-full bg-success" />
-          有依据
-        </span>
-      </div>
-      <div className="space-y-2">
-        {citations.map((citation) =>
-          citation.url ? (
-            <a
-              className="flex min-h-12 items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 text-forest-800 transition-colors hover:border-line-strong hover:bg-forest-100/40"
-              href={citation.url}
-              key={citation.knowledgeSourceId}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <FileText
-                aria-hidden="true"
-                className="size-3.5 shrink-0 text-ink-400"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12px] font-medium">
-                  {citation.title}
-                </span>
-                <span className="mono mt-0.5 block truncate text-[10px] text-ink-600">
-                  {citation.url}
-                </span>
-              </span>
-              <ExternalLink
-                aria-hidden="true"
-                className="size-3.5 shrink-0 text-ink-400"
-              />
-            </a>
-          ) : (
-            <div
-              className="flex min-h-10 items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 text-[12px] text-ink-600"
-              key={citation.knowledgeSourceId}
-            >
-              <FileText
-                aria-hidden="true"
-                className="size-3.5 shrink-0 text-ink-400"
-              />
-              <span className="min-w-0 flex-1 truncate">{citation.title}</span>
-            </div>
-          ),
-        )}
-      </div>
-    </div>
-  );
-}
-
-async function consumePreviewStream(
-  stream: ReadableStream<Uint8Array>,
-  onEvent: (event: PreviewStreamEvent) => void,
-) {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (line.trim()) {
-        onEvent(JSON.parse(line) as PreviewStreamEvent);
-      }
-    }
-
-    if (done) {
-      if (buffer.trim()) {
-        onEvent(JSON.parse(buffer) as PreviewStreamEvent);
-      }
-      return;
-    }
-  }
 }
 
 function AssistantIdentityMark({ size = "default" }: { size?: "default" | "large" }) {
