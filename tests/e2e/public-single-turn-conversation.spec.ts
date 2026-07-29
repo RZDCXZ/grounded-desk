@@ -605,6 +605,117 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
   ).toBeVisible();
 });
 
+test("管理员补充知识后已发布助手立即改进回答并解决问题", async ({
+  context,
+  page,
+  request,
+}) => {
+  const scenarioId = Date.now();
+  const sourceTitle = `退款规则说明 ${scenarioId}`;
+  const sourceMarker = `REFUND-POLICY-${scenarioId}-`.repeat(8);
+  const question = `${sourceMarker} 演示服务可以在几天内申请退款？`;
+
+  await signInAsAdministrator(page, request);
+  await page.goto("/admin/knowledge-sources");
+  const disableSourceButtons = page.getByRole("button", {
+    name: "停用",
+    exact: true,
+  });
+  while ((await disableSourceButtons.count()) > 0) {
+    const disabledSourceCount = await page
+      .getByRole("button", { name: "重新启用", exact: true })
+      .count();
+    await disableSourceButtons.first().click();
+    await expect
+      .poll(() =>
+        page
+          .getByRole("button", { name: "重新启用", exact: true })
+          .count(),
+      )
+      .toBe(disabledSourceCount + 1);
+  }
+
+  await page.goto("/admin/assistant");
+  const publishButton = page.getByRole("button", {
+    name: /^(发布助手|重新发布助手)$/,
+  });
+  if ((await publishButton.count()) > 0) {
+    await publishButton.click();
+  }
+
+  await expect(page.getByText("已发布", { exact: true }).first()).toBeVisible();
+  const publicUrl = await page
+    .getByRole("link", { name: "打开公开页面" })
+    .getAttribute("href");
+  expect(publicUrl).toBeTruthy();
+
+  const visitorPage = await context.newPage();
+  await visitorPage.goto(new URL(publicUrl!).pathname);
+  await visitorPage.getByLabel("咨询问题").fill(question);
+  await visitorPage.getByRole("button", { name: "发送问题" }).click();
+
+  await expect(
+    visitorPage.getByText("现有知识暂时无法确认", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    visitorPage.getByText(
+      "当前可用知识不足以支持这个问题的事实性回答。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  await page.goto("/admin/unresolved-questions");
+  await expect(page.getByText(question, { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("可靠拒答", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText(
+      "当前可用知识不足以支持这个问题的事实性回答。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("这条回答没有引用。")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "查看会话上下文" }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "更新知识来源" }).click();
+  await page.getByRole("button", { name: "添加知识来源" }).click();
+  await page.getByRole("tab", { name: "手工内容" }).click();
+  await page.getByLabel("标题", { exact: true }).fill(sourceTitle);
+  await page
+    .getByLabel("正文", { exact: true })
+    .fill(
+      [
+        "## 退款规则",
+        "",
+        `演示服务支持在购买后的七天内申请退款。管理员确认申请符合规则后，会按原支付方式处理。${sourceMarker} ${sourceMarker}`,
+      ].join("\n"),
+    );
+  await page
+    .getByLabel("原始 URL（可选）", { exact: true })
+    .fill("https://example.com/refund-policy");
+
+  const sourceRow = page.getByRole("row").filter({ hasText: sourceTitle });
+  await page.getByRole("button", { name: "确认添加" }).click();
+  await expect(sourceRow).toContainText("可用", { timeout: 15_000 });
+
+  await visitorPage.getByLabel("咨询问题").fill(question);
+  await visitorPage.getByRole("button", { name: "发送问题" }).click();
+
+  await expect(visitorPage.getByText(/根据当前可用知识/).last()).toBeVisible();
+  await expect(visitorPage.getByText(/七天内申请退款/)).toBeVisible();
+  await expect(
+    visitorPage.getByRole("link", { name: new RegExp(sourceTitle) }),
+  ).toHaveAttribute("href", "https://example.com/refund-policy");
+
+  await page.goto("/admin/unresolved-questions");
+  await page.getByRole("button", { name: "标记为已解决" }).click();
+  await page.getByRole("link", { name: /^已解决 \(\d+\)$/ }).click();
+
+  await expect(page.getByText(question, { exact: true }).last()).toBeVisible();
+  await expect(page.getByText(/已于 .* 解决/)).toBeVisible();
+});
+
 function rectanglesOverlap(
   first: { x: number; y: number; width: number; height: number },
   second: { x: number; y: number; width: number; height: number },
