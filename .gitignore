@@ -10,3 +10,4 @@ test-results/
 !.env.example
 supabase/.branches/
 supabase/.temp/
+.superdesign/tmp/

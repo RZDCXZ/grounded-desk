@@ -1,0 +1,235 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    :root {
+      --paper: #f7f7f3;
+      --surface: #ffffff;
+      --forest-950: #10291e;
+      --forest-800: #1a3c2b;
+      --forest-100: #dde9e1;
+      --ink-900: #202421;
+      --ink-600: #626a64;
+      --ink-400: #909790;
+      --line: rgba(32, 36, 33, 0.14);
+      --line-strong: rgba(32, 36, 33, 0.26);
+      --success: #2f7a4c;
+      --success-light: #e6f3ea;
+      --info: #326a8c;
+      --info-light: #e6f0f6;
+    }
+
+    body {
+      font-family: 'Noto Sans SC', 'Inter', sans-serif;
+      background-color: #f3f4f6;
+      color: var(--ink-900);
+      margin: 0;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Mimic GroundedDesk Embed Styles */
+    .gd-panel {
+      position: fixed;
+      right: 20px;
+      bottom: 92px;
+      z-index: 2147483000;
+      width: 400px;
+      height: 640px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+      box-shadow: 0 8px 24px rgba(16, 41, 30, 0.08);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .gd-launcher {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 2147483001;
+      width: 56px;
+      height: 56px;
+      border-radius: 12px;
+      background: var(--forest-800);
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 8px 24px rgba(16, 41, 30, 0.08);
+      cursor: pointer;
+      transition: filter 160ms ease-out;
+    }
+
+    .gd-launcher:hover { filter: brightness(0.94); }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: var(--line);
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="min-h-screen relative overflow-hidden" data-sd-id="1">
+    <!-- Host Website Background (Restrained Neutral) -->
+    <div class="max-w-6xl mx-auto pt-20 px-8 opacity-40 select-none pointer-events-none" data-sd-id="2">
+      <header class="flex justify-between items-center mb-16" data-sd-id="3">
+        <div class="h-8 w-32 bg-gray-300 rounded" data-sd-id="4"></div>
+        <nav class="flex gap-6" data-sd-id="5">
+          <div class="h-4 w-16 bg-gray-300 rounded" data-sd-id="6"></div>
+          <div class="h-4 w-16 bg-gray-300 rounded" data-sd-id="7"></div>
+          <div class="h-4 w-16 bg-gray-300 rounded" data-sd-id="8"></div>
+        </nav>
+      </header>
+      <main class="space-y-8" data-sd-id="9">
+        <div class="h-12 w-2/3 bg-gray-300 rounded" data-sd-id="10"></div>
+        <div class="space-y-4" data-sd-id="11">
+          <div class="h-4 w-full bg-gray-300 rounded" data-sd-id="12"></div>
+          <div class="h-4 w-full bg-gray-300 rounded" data-sd-id="13"></div>
+          <div class="h-4 w-3/4 bg-gray-300 rounded" data-sd-id="14"></div>
+        </div>
+        <div class="grid grid-cols-3 gap-6 pt-12" data-sd-id="15">
+          <div class="h-48 bg-gray-200 rounded-xl" data-sd-id="16"></div>
+          <div class="h-48 bg-gray-200 rounded-xl" data-sd-id="17"></div>
+          <div class="h-48 bg-gray-200 rounded-xl" data-sd-id="18"></div>
+        </div>
+      </main>
+    </div>
+
+    <!-- GroundedDesk Embed Panel (Open State) -->
+    <div class="gd-panel" data-sd-id="19">
+      <!-- Assistant Header -->
+      <header class="bg-[#10291e] px-5 py-6 text-white shrink-0" data-sd-id="20">
+        <div class="flex items-center gap-3" data-sd-id="21">
+          <!-- Identity Mark -->
+          <span class="grid size-10 shrink-0 place-items-center rounded-lg border border-white/20 bg-white/10" data-sd-id="22">
+            <span class="size-3 border border-white" data-sd-id="23"></span>
+          </span>
+          <div class="min-w-0" data-sd-id="24">
+            <h1 class="truncate text-lg font-semibold tracking-tight" data-sd-id="25">演示网站服务助手</h1>
+            <p class="mt-1 text-[12px] text-white/65" data-sd-id="26">依据已核查的知识回答</p>
+          </div>
+        </div>
+      </header>
+
+      <!-- Scrollable Conversation Area -->
+      <div class="flex-1 overflow-y-auto bg-[#f7f7f3]/70 p-4 space-y-5 custom-scrollbar" data-sd-id="27">
+        <!-- Welcome Message -->
+        <div class="flex items-start gap-3" data-sd-id="28">
+          <span class="grid size-10 shrink-0 place-items-center rounded-lg border border-[#1a3c2b]/20 bg-[#dde9e1]" data-sd-id="29">
+            <span class="size-3 border border-[#1a3c2b]" data-sd-id="30"></span>
+          </span>
+          <div class="max-w-[88%] rounded-xl rounded-tl-sm border border-[rgba(32,36,33,0.14)] bg-white p-4 text-sm leading-6" data-sd-id="31">
+            您好！我是演示网站的 AI 服务助手。我可以为您解答关于我们的产品功能、定价方案以及技术支持的相关问题。请问有什么我可以帮您的？
+          </div>
+        </div>
+
+        <!-- Privacy Notice -->
+        <div class="flex items-start gap-3 rounded-lg border border-[#326a8c]/25 bg-[#e6f0f6] p-4 text-[12px] leading-5 text-[#626a64]" data-sd-id="32">
+          <iconify-icon icon="lucide:shield-check" class="mt-0.5 text-base text-[#326a8c]"></iconify-icon>
+          <p data-sd-id="33">这是 AI 助手。请勿提交身份证件、账户凭据、财务信息等敏感个人信息。</p>
+        </div>
+
+        <!-- User Question -->
+        <div class="flex justify-end" data-sd-id="34">
+          <div class="max-w-[88%] rounded-xl rounded-tr-sm bg-[#1a3c2b] px-4 py-3 text-sm leading-6 text-white" data-sd-id="35">
+            你们的高级版套餐包含 API 访问权限吗？
+          </div>
+        </div>
+
+        <!-- Assistant Grounded Answer -->
+        <div class="flex items-start gap-3" data-sd-id="36">
+          <span class="grid size-10 shrink-0 place-items-center rounded-lg border border-[#1a3c2b]/20 bg-[#dde9e1]" data-sd-id="37">
+            <span class="size-3 border border-[#1a3c2b]" data-sd-id="38"></span>
+          </span>
+          <div class="min-w-0 flex-1 rounded-xl rounded-tl-sm border border-[rgba(32,36,33,0.14)] bg-white p-4" data-sd-id="39">
+            <div class="text-sm leading-6 text-[#202421]" data-sd-id="40">
+              是的，我们的<strong>高级版套餐 (Premium Plan)</strong> 包含完整的 API 访问权限。通过 API，您可以：
+              <ul class="mt-2 list-disc space-y-1 pl-5" data-sd-id="41">
+                <li data-sd-id="42">自动化处理大规模知识导入</li>
+                <li data-sd-id="43">将 AI 助手集成到您自有的移动端应用中</li>
+                <li data-sd-id="44">实时同步外部数据库内容作为知识来源</li>
+              </ul>
+            </div>
+
+            <!-- Citations Section -->
+            <div class="mt-4 border-t border-[rgba(32,36,33,0.14)] pt-3" data-sd-id="45">
+              <div class="mb-2 flex items-center justify-between gap-3" data-sd-id="46">
+                <p class="text-[11px] font-semibold text-[#626a64]" data-sd-id="47">回答依据</p>
+                <span class="inline-flex items-center gap-1.5 rounded-full bg-[#e6f3ea] px-2 py-0.5 text-[10px] font-semibold text-[#2f7a4c]" data-sd-id="48">
+                  <span class="size-1.5 rounded-full bg-[#2f7a4c]" data-sd-id="49"></span>
+                  有依据
+                </span>
+              </div>
+              <div class="space-y-2" data-sd-id="50">
+                <!-- Citation Item 1 -->
+                <a href="#" id="citation-1" class="flex min-h-12 items-center gap-2 rounded-lg border border-[rgba(32,36,33,0.14)] bg-[#f7f7f3] px-3 py-2 text-[#1a3c2b] transition-colors hover:border-[rgba(32,36,33,0.26)] hover:bg-[#dde9e1]/40" data-sd-id="51">
+                  <iconify-icon icon="lucide:file-text" class="text-sm text-[#909790]"></iconify-icon>
+                  <span class="min-w-0 flex-1" data-sd-id="52">
+                    <span class="block truncate text-[12px] font-medium" data-sd-id="53">高级版套餐功能清单</span>
+                    <span class="mono mt-0.5 block truncate text-[10px] text-[#626a64]" data-sd-id="54">https://groundeddesk.com/pricing/details</span>
+                  </span>
+                  <iconify-icon icon="lucide:external-link" class="text-sm text-[#909790]"></iconify-icon>
+                </a>
+                <!-- Citation Item 2 -->
+                <a href="#" id="citation-2" class="flex min-h-12 items-center gap-2 rounded-lg border border-[rgba(32,36,33,0.14)] bg-[#f7f7f3] px-3 py-2 text-[#1a3c2b] transition-colors hover:border-[rgba(32,36,33,0.26)] hover:bg-[#dde9e1]/40" data-sd-id="55">
+                  <iconify-icon icon="lucide:file-text" class="text-sm text-[#909790]"></iconify-icon>
+                  <span class="min-w-0 flex-1" data-sd-id="56">
+                    <span class="block truncate text-[12px] font-medium" data-sd-id="57">开发者文档：API 集成指南</span>
+                    <span class="mono mt-0.5 block truncate text-[10px] text-[#626a64]" data-sd-id="58">https://docs.groundeddesk.com/api/intro</span>
+                  </span>
+                  <iconify-icon icon="lucide:external-link" class="text-sm text-[#909790]"></iconify-icon>
+                </a>
+              </div>
+            </div>
+
+            <!-- Feedback Controls -->
+            <div class="mt-4 flex items-center justify-end gap-2" data-sd-id="59">
+              <button id="feedback-helpful" class="flex items-center gap-1 text-[11px] text-[#909790] hover:text-[#2f7a4c] transition-colors" data-sd-id="60">
+                <iconify-icon icon="lucide:thumbs-up"></iconify-icon>
+                有帮助
+              </button>
+              <div class="w-px h-3 bg-[rgba(32,36,33,0.14)]" data-sd-id="61"></div>
+              <button id="feedback-unhelpful" class="flex items-center gap-1 text-[11px] text-[#909790] hover:text-[#b6413c] transition-colors" data-sd-id="62">
+                <iconify-icon icon="lucide:thumbs-down"></iconify-icon>
+                没帮助
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fixed Bottom Composer -->
+      <form class="border-t border-[rgba(32,36,33,0.14)] bg-white p-4 sm:p-5 shrink-0" data-sd-id="63">
+        <label class="mb-2 block text-[13px] font-semibold text-[#202421]" for="question-input" data-sd-id="64">咨询问题</label>
+        <div class="flex items-end gap-2" data-sd-id="65">
+          <textarea id="question-input" placeholder="请输入一个与服务相关的问题" class="flex-1 min-h-[80px] w-full resize-none rounded-lg border border-[rgba(32,36,33,0.26)] bg-[#f7f7f3] px-3 py-2.5 text-sm leading-6 text-[#202421] outline-none transition-colors placeholder:text-[#626a64] focus-visible:border-[#1a3c2b]" data-sd-id="66"></textarea>
+          <button type="submit" id="send-button" class="inline-flex shrink-0 size-11 items-center justify-center rounded-lg bg-[#1a3c2b] text-white hover:brightness-[0.94] transition-all" data-sd-id="67">
+            <iconify-icon icon="lucide:send" class="text-xl"></iconify-icon>
+          </button>
+        </div>
+        <p class="mt-2 text-[11px] text-[#626a64]" data-sd-id="68">无需注册。请勿提交敏感个人信息。</p>
+      </form>
+    </div>
+
+    <!-- Launcher Button (Open state displays close icon) -->
+    <div class="gd-launcher" data-sd-id="69">
+      <iconify-icon icon="lucide:x" class="text-2xl"></iconify-icon>
+    </div>
+  </div>
+
+</body></html>
