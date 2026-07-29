@@ -62,6 +62,10 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
     response.headers.get("content-type"),
     "application/x-ndjson; charset=utf-8",
   );
+  assert.equal(
+    response.headers.get("x-assistant-message-id"),
+    publicConversationStart().assistantMessageId,
+  );
   assert.deepEqual(started, [
     { publicId, question: "你们提供什么服务？" },
   ]);

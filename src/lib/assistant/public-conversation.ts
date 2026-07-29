@@ -120,6 +120,10 @@ export async function createPublicConversationResponse(
     detectQuestionLanguage(questionResult.question),
   );
   response.headers.set("x-conversation-id", conversation.conversationId);
+  response.headers.set(
+    "x-assistant-message-id",
+    conversation.assistantMessageId,
+  );
   return response;
 }
 

@@ -179,6 +179,56 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
   await expect(
     page.getByRole("link", { name: new RegExp(sourceTitle) }),
   ).toHaveAttribute("href", "https://example.com/public-services");
+  await expect(
+    page.getByRole("group", { name: "评价这条助手回答" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "没帮助" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "已记录，感谢反馈",
+  );
+
+  const adminReviewPage = await context.newPage();
+  await adminReviewPage.goto("/admin/unresolved-questions");
+  await expect(
+    adminReviewPage.getByRole("heading", { name: "待解决问题" }),
+  ).toBeVisible();
+  await expect(
+    adminReviewPage.getByText("没帮助", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    adminReviewPage.getByText(
+      `${sourceMarker} 你们提供什么服务？`,
+      { exact: true },
+    ).last(),
+  ).toBeVisible();
+  await adminReviewPage
+    .getByRole("link", { name: "查看会话上下文" })
+    .click();
+  await expect(
+    adminReviewPage.getByText("正在复盘关联待解决问题"),
+  ).toBeVisible();
+  await expect(
+    adminReviewPage.getByText("访客评价：没帮助"),
+  ).toBeVisible();
+  await adminReviewPage
+    .getByRole("link", { name: "返回待解决问题" })
+    .click();
+  await adminReviewPage
+    .getByRole("button", { name: "标记为已解决" })
+    .click();
+  await adminReviewPage
+    .getByRole("link", { name: /^已解决 \(1\)$/ })
+    .click();
+  await expect(
+    adminReviewPage.getByText(
+      `${sourceMarker} 你们提供什么服务？`,
+      { exact: true },
+    ).last(),
+  ).toBeVisible();
+  await expect(
+    adminReviewPage.getByText("已解决", { exact: true }).first(),
+  ).toBeVisible();
+  await adminReviewPage.close();
 
   const hostPage = await context.newPage();
   await hostPage.goto("/");

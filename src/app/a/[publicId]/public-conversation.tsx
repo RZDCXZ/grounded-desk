@@ -1,10 +1,13 @@
 "use client";
 
 import {
+  Check,
   Info,
   MessageSquarePlus,
   Send,
   ShieldCheck,
+  ThumbsDown,
+  ThumbsUp,
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -16,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
 import type { PublicConversationBlockReason } from "@/lib/assistant/public-conversation";
+import type { QualityFeedbackValue } from "@/lib/assistant/quality-feedback";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +36,9 @@ type ConversationResult = {
   question: string;
   answer: string;
   citations: GroundedCitation[];
+  messageId?: string;
+  feedback?: QualityFeedbackValue;
+  feedbackStatus?: "submitting" | "error";
   code?: PublicConversationBlockReason;
   canStartNewConversation?: boolean;
   retryFailedAnswer?: boolean;
@@ -127,6 +134,15 @@ export function PublicConversation({
       );
       if (returnedConversationId) {
         setConversationId(returnedConversationId);
+      }
+      const returnedMessageId = response.headers.get(
+        "x-assistant-message-id",
+      );
+      if (returnedMessageId) {
+        updateResult(resultId, (current) => ({
+          ...current,
+          messageId: returnedMessageId,
+        }));
       }
 
       if (!response.ok) {
@@ -248,6 +264,43 @@ export function PublicConversation({
     setQuestion("");
   }
 
+  async function submitFeedback(
+    resultId: string,
+    messageId: string,
+    value: QualityFeedbackValue,
+  ) {
+    updateResult(resultId, (current) => ({
+      ...current,
+      feedbackStatus: "submitting",
+    }));
+
+    try {
+      const response = await fetch(
+        `/api/public/assistants/${encodeURIComponent(publicId)}/messages/${encodeURIComponent(messageId)}/feedback`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ value }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("暂时无法记录质量反馈，请稍后重试。");
+      }
+
+      updateResult(resultId, (current) => ({
+        ...current,
+        feedback: value,
+        feedbackStatus: undefined,
+      }));
+    } catch {
+      updateResult(resultId, (current) => ({
+        ...current,
+        feedbackStatus: "error",
+      }));
+    }
+  }
+
   return (
     <main
       className={cn(
@@ -336,6 +389,9 @@ export function PublicConversation({
                     </div>
                   </div>
                   <AssistantResponse
+                    onFeedback={(messageId, value) =>
+                      void submitFeedback(result.id, messageId, value)
+                    }
                     onRetry={() =>
                       void requestAnswer(
                         result.question,
@@ -418,10 +474,15 @@ export function PublicConversation({
 }
 
 function AssistantResponse({
+  onFeedback,
   onRetry,
   onStartNewConversation,
   result,
 }: {
+  onFeedback: (
+    messageId: string,
+    value: QualityFeedbackValue,
+  ) => void;
   onRetry: () => void;
   onStartNewConversation: () => void;
   result: ConversationResult;
@@ -508,7 +569,97 @@ function AssistantResponse({
             ) : null}
           </>
         )}
+        {(result.status === "complete" ||
+          result.status === "refusal") &&
+        result.messageId ? (
+          <QualityFeedbackControls
+            feedback={result.feedback}
+            messageId={result.messageId}
+            onFeedback={onFeedback}
+            status={result.feedbackStatus}
+          />
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+function QualityFeedbackControls({
+  feedback,
+  messageId,
+  onFeedback,
+  status,
+}: {
+  feedback?: QualityFeedbackValue;
+  messageId: string;
+  onFeedback: (
+    messageId: string,
+    value: QualityFeedbackValue,
+  ) => void;
+  status?: "submitting" | "error";
+}) {
+  const disabled = Boolean(feedback) || status === "submitting";
+
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          aria-label="评价这条助手回答"
+          className="flex items-center gap-2"
+          role="group"
+        >
+          <Button
+            aria-pressed={feedback === "helpful"}
+            className={cn(
+              "text-xs",
+              feedback === "helpful" &&
+                "border-success bg-success-light text-success",
+            )}
+            disabled={disabled}
+            onClick={() => onFeedback(messageId, "helpful")}
+            type="button"
+            variant="secondary"
+          >
+            {feedback === "helpful" ? (
+              <Check aria-hidden="true" />
+            ) : (
+              <ThumbsUp aria-hidden="true" />
+            )}
+            有帮助
+          </Button>
+          <Button
+            aria-pressed={feedback === "unhelpful"}
+            className={cn(
+              "text-xs",
+              feedback === "unhelpful" &&
+                "border-danger bg-danger-light text-danger",
+            )}
+            disabled={disabled}
+            onClick={() => onFeedback(messageId, "unhelpful")}
+            type="button"
+            variant="secondary"
+          >
+            {feedback === "unhelpful" ? (
+              <Check aria-hidden="true" />
+            ) : (
+              <ThumbsDown aria-hidden="true" />
+            )}
+            没帮助
+          </Button>
+        </div>
+        {feedback ? (
+          <p className="text-[11px] font-medium text-success" role="status">
+            已记录，感谢反馈
+          </p>
+        ) : status === "submitting" ? (
+          <Spinner label="正在记录质量反馈" />
+        ) : null}
+      </div>
+      {status === "error" ? (
+        <p className="mt-2 text-[11px] text-danger" role="alert">
+          暂时无法记录质量反馈，请重试。
+        </p>
+      ) : null}
     </div>
   );
 }
