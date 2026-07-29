@@ -1,0 +1,365 @@
+drop function public.begin_public_conversation(uuid, text);
+
+alter table public.messages
+drop constraint messages_message_type_check;
+
+alter table public.messages
+add constraint messages_message_type_check
+check (
+  message_type in (
+    'visitor_question',
+    'answer_retry',
+    'grounded_answer',
+    'grounded_refusal',
+    'technical_failure'
+  )
+);
+
+create index messages_conversation_type_created_at_idx
+on public.messages(conversation_id, message_type, created_at desc);
+
+create index messages_type_created_at_idx
+on public.messages(message_type, created_at desc);
+
+create function public.begin_public_conversation(
+  assistant_public_id uuid,
+  visitor_question text,
+  requested_conversation_id uuid default null,
+  retry_failed_question boolean default false,
+  daily_message_budget integer default 500,
+  context_message_limit integer default 6
+)
+returns table (
+  request_status text,
+  conversation_id uuid,
+  assistant_message_id uuid,
+  organization_id uuid,
+  assistant_id uuid,
+  name text,
+  service_scope text,
+  tone text,
+  human_contact_label text,
+  human_contact_url text,
+  context_messages jsonb,
+  question_count integer
+)
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  published_assistant public.assistants%rowtype;
+  selected_conversation public.conversations%rowtype;
+  created_assistant_message_id uuid;
+  retried_failure_message_id uuid;
+  retried_question_message_id uuid;
+  request_state text := 'accepted';
+  recent_context jsonb := '[]'::jsonb;
+  existing_question_count integer := 0;
+begin
+  visitor_question := btrim(visitor_question);
+
+  if
+    visitor_question is null
+    or char_length(visitor_question) not between 1 and 2000
+  then
+    raise exception 'visitor question is invalid' using errcode = '22023';
+  end if;
+
+  if daily_message_budget is null or daily_message_budget not between 1 and 1000000 then
+    raise exception 'daily message budget is invalid' using errcode = '22023';
+  end if;
+
+  if context_message_limit is null or context_message_limit not between 0 and 20 then
+    raise exception 'context message limit is invalid' using errcode = '22023';
+  end if;
+
+  if retry_failed_question and requested_conversation_id is null then
+    request_state := 'retry_not_available';
+  end if;
+
+  select assistant.*
+  into published_assistant
+  from public.assistants as assistant
+  where assistant.public_id = assistant_public_id
+    and assistant.status = 'published';
+
+  if published_assistant.id is null then
+    raise exception 'published assistant not found' using errcode = 'P0002';
+  end if;
+
+  if request_state = 'accepted' and requested_conversation_id is not null then
+    select conversation.*
+    into selected_conversation
+    from public.conversations as conversation
+    where conversation.id = requested_conversation_id
+      and conversation.assistant_id = published_assistant.id
+      and conversation.organization_id = published_assistant.organization_id
+    for update;
+
+    if selected_conversation.id is null then
+      request_state := 'conversation_not_found';
+    else
+      select count(*)::integer
+      into existing_question_count
+      from public.messages as message
+      where message.conversation_id = selected_conversation.id
+        and message.organization_id = selected_conversation.organization_id
+        and message.message_type = 'visitor_question';
+
+      if exists (
+        select 1
+        from public.messages as message
+        where message.conversation_id = selected_conversation.id
+          and message.organization_id = selected_conversation.organization_id
+          and message.message_type = 'grounded_answer'
+          and message.status = 'pending'
+      ) then
+        request_state := 'answer_in_progress';
+      elsif (
+        select count(*)
+        from public.messages as message
+        where message.conversation_id = selected_conversation.id
+          and message.organization_id = selected_conversation.organization_id
+          and message.message_type in (
+            'visitor_question',
+            'answer_retry'
+          )
+          and message.created_at >= clock_timestamp() - interval '1 minute'
+      ) >= 5 then
+        request_state := 'rate_limited';
+      elsif not retry_failed_question and existing_question_count >= 30 then
+        request_state := 'question_limit';
+      end if;
+
+      if request_state = 'accepted' and retry_failed_question then
+        select
+          failure.id,
+          question.id
+        into
+          retried_failure_message_id,
+          retried_question_message_id
+        from public.messages as failure
+        cross join lateral (
+          select visitor.id, visitor.content
+          from public.messages as visitor
+          where visitor.conversation_id = failure.conversation_id
+            and visitor.organization_id = failure.organization_id
+            and visitor.message_type = 'visitor_question'
+            and visitor.created_at < failure.created_at
+          order by visitor.created_at desc, visitor.id desc
+          limit 1
+        ) as question
+        where failure.conversation_id = selected_conversation.id
+          and failure.organization_id = selected_conversation.organization_id
+          and failure.message_type = 'technical_failure'
+          and failure.status = 'failed'
+          and question.content = visitor_question
+        order by failure.created_at desc, failure.id desc
+        limit 1;
+
+        if retried_failure_message_id is null then
+          request_state := 'retry_not_available';
+        end if;
+      end if;
+    end if;
+  end if;
+
+  if request_state = 'accepted' then
+    perform pg_catalog.pg_advisory_xact_lock(
+      pg_catalog.hashtextextended(
+        'grounded-desk-global-daily-message-budget',
+        0
+      )
+    );
+
+    if (
+      select count(*)
+      from public.messages as message
+      where message.message_type in (
+        'visitor_question',
+        'answer_retry'
+      )
+        and message.created_at >= (
+          pg_catalog.date_trunc(
+            'day',
+            pg_catalog.now() at time zone 'UTC'
+          ) at time zone 'UTC'
+        )
+    ) >= daily_message_budget then
+      request_state := 'daily_budget';
+    end if;
+  end if;
+
+  if request_state = 'accepted' and selected_conversation.id is null then
+    insert into public.conversations (
+      organization_id,
+      assistant_id
+    ) values (
+      published_assistant.organization_id,
+      published_assistant.id
+    )
+    returning * into selected_conversation;
+  end if;
+
+  if request_state = 'accepted' and context_message_limit > 0 then
+    select coalesce(
+      jsonb_agg(
+        jsonb_build_object(
+          'role',
+          case
+            when recent.message_type = 'visitor_question' then 'visitor'
+            else 'assistant'
+          end,
+          'content',
+          recent.content
+        )
+        order by
+          recent.created_at,
+          case
+            when recent.message_type = 'visitor_question' then 1
+            else 2
+          end,
+          recent.id
+      ),
+      '[]'::jsonb
+    )
+    into recent_context
+    from (
+      select
+        message.id,
+        message.message_type,
+        message.content,
+        message.created_at
+      from public.messages as message
+      where message.conversation_id = selected_conversation.id
+        and message.organization_id = selected_conversation.organization_id
+        and message.status = 'completed'
+        and message.id is distinct from retried_question_message_id
+        and message.message_type in (
+          'visitor_question',
+          'grounded_answer',
+          'grounded_refusal'
+        )
+      order by
+        message.created_at desc,
+        case
+          when message.message_type = 'visitor_question' then 1
+          else 2
+        end desc,
+        message.id desc
+      limit context_message_limit
+    ) as recent;
+  end if;
+
+  if request_state = 'accepted' and retry_failed_question then
+    insert into public.messages (
+      organization_id,
+      conversation_id,
+      message_type,
+      content,
+      status,
+      created_at
+    ) values (
+      published_assistant.organization_id,
+      selected_conversation.id,
+      'answer_retry',
+      visitor_question,
+      'completed',
+      clock_timestamp()
+    );
+
+    update public.messages as message
+    set
+      message_type = 'grounded_answer',
+      content = '',
+      status = 'pending',
+      created_at = clock_timestamp()
+    where message.id = retried_failure_message_id
+      and message.conversation_id = selected_conversation.id
+      and message.organization_id = selected_conversation.organization_id
+    returning message.id into created_assistant_message_id;
+  elsif request_state = 'accepted' then
+    insert into public.messages (
+      organization_id,
+      conversation_id,
+      message_type,
+      content,
+      status,
+      created_at
+    ) values (
+      published_assistant.organization_id,
+      selected_conversation.id,
+      'visitor_question',
+      visitor_question,
+      'completed',
+      clock_timestamp()
+    );
+
+    insert into public.messages (
+      organization_id,
+      conversation_id,
+      message_type,
+      content,
+      status,
+      created_at
+    ) values (
+      published_assistant.organization_id,
+      selected_conversation.id,
+      'grounded_answer',
+      '',
+      'pending',
+      clock_timestamp()
+    )
+    returning id into created_assistant_message_id;
+
+    existing_question_count := existing_question_count + 1;
+  end if;
+
+  if request_state = 'accepted' then
+    update public.conversations as conversation
+    set last_activity_at = now()
+    where conversation.id = selected_conversation.id
+      and conversation.organization_id =
+        selected_conversation.organization_id;
+  end if;
+
+  return query
+  select
+    request_state,
+    selected_conversation.id,
+    created_assistant_message_id,
+    published_assistant.organization_id,
+    published_assistant.id,
+    published_assistant.name,
+    published_assistant.service_scope,
+    published_assistant.tone,
+    published_assistant.human_contact_label,
+    published_assistant.human_contact_url,
+    recent_context,
+    existing_question_count;
+end;
+$$;
+
+revoke all
+on function public.begin_public_conversation(
+  uuid,
+  text,
+  uuid,
+  boolean,
+  integer,
+  integer
+)
+from public;
+
+grant execute
+on function public.begin_public_conversation(
+  uuid,
+  text,
+  uuid,
+  boolean,
+  integer,
+  integer
+)
+to service_role;

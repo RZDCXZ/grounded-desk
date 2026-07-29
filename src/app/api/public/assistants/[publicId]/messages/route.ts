@@ -1,14 +1,19 @@
 import { streamGroundedAnswer } from "@/lib/assistant/grounded-answer";
 import {
   createPublicConversationResponse,
+  type PublicConversationBlocked,
   type PublicConversationStart,
 } from "@/lib/assistant/public-conversation";
 import { createPublicSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
+import { readIntegerServerConfig } from "@/lib/server-config";
 import { createPrivilegedSupabaseClient } from "@/lib/supabase/privileged";
 
 type PublicConversationRow = {
-  conversation_id: string;
-  assistant_message_id: string;
+  request_status:
+    | "accepted"
+    | PublicConversationBlocked["blockedReason"];
+  conversation_id: string | null;
+  assistant_message_id: string | null;
   organization_id: string;
   assistant_id: string;
   name: string;
@@ -16,6 +21,8 @@ type PublicConversationRow = {
   tone: string;
   human_contact_label: string;
   human_contact_url: string;
+  context_messages: PublicConversationStart["context"];
+  question_count: number;
 };
 
 export async function POST(
@@ -26,12 +33,33 @@ export async function POST(
   const supabase = createPrivilegedSupabaseClient();
 
   return createPublicConversationResponse(request, publicId, {
-    async beginConversation(requestedPublicId, question) {
+    async beginConversation(
+      requestedPublicId,
+      question,
+      conversationId,
+      retry,
+    ) {
       const { data, error } = await supabase.rpc(
         "begin_public_conversation",
         {
           assistant_public_id: requestedPublicId,
           visitor_question: question,
+          requested_conversation_id: conversationId ?? null,
+          retry_failed_question: retry ?? false,
+          daily_message_budget: readIntegerServerConfig(
+            process.env,
+            "PUBLIC_DAILY_MESSAGE_BUDGET",
+            500,
+            1,
+            1_000_000,
+          ),
+          context_message_limit: readIntegerServerConfig(
+            process.env,
+            "PUBLIC_CONVERSATION_CONTEXT_MESSAGES",
+            6,
+            0,
+            20,
+          ),
         },
       );
 
@@ -44,13 +72,14 @@ export async function POST(
       }
 
       const row = (data as PublicConversationRow[] | null)?.[0];
-      return row ? mapConversation(row) : null;
+      return row ? mapConversation(row, conversationId) : null;
     },
     streamAnswer(conversation) {
       return streamGroundedAnswer(
         {
           organizationId: conversation.organizationId,
           question: conversation.question,
+          context: conversation.context,
           assistant: conversation.assistant,
         },
         createPublicSupabaseGroundedAnswerDependencies(
@@ -97,11 +126,29 @@ export async function POST(
 
 function mapConversation(
   row: PublicConversationRow,
-): PublicConversationStart {
+  requestedConversationId?: string,
+): PublicConversationStart | PublicConversationBlocked {
+  if (row.request_status !== "accepted") {
+    return {
+      blockedReason: row.request_status,
+      conversationId:
+        row.conversation_id ?? requestedConversationId,
+      contact: {
+        label: row.human_contact_label,
+        url: row.human_contact_url,
+      },
+    };
+  }
+
+  if (!row.conversation_id || !row.assistant_message_id) {
+    throw new Error("公开会话入口未返回已接受请求的消息标识");
+  }
+
   return {
     conversationId: row.conversation_id,
     assistantMessageId: row.assistant_message_id,
     organizationId: row.organization_id,
+    context: row.context_messages ?? [],
     assistant: {
       name: row.name,
       serviceScope: row.service_scope,

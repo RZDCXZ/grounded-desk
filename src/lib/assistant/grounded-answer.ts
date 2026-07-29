@@ -29,6 +29,11 @@ export type GroundedCitation = {
   url: string | null;
 };
 
+export type ConversationContextMessage = {
+  role: "visitor" | "assistant";
+  content: string;
+};
+
 export type GroundedAnswerEvent =
   | {
       type: "text_delta";
@@ -93,6 +98,7 @@ type GroundedAnswerDependencies = {
   answerProvider: ProviderIdentity & {
     streamAnswer(input: {
       question: string;
+      context: ConversationContextMessage[];
       assistant: GroundedAnswerInput["assistant"];
       evidence: GroundedEvidence[];
     }): {
@@ -117,6 +123,7 @@ type GroundedAnswerDependencies = {
 type GroundedAnswerInput = {
   organizationId: string;
   question: string;
+  context?: ConversationContextMessage[];
   assistant: {
     name: string;
     serviceScope: string;
@@ -130,12 +137,17 @@ export async function* streamGroundedAnswer(
   input: GroundedAnswerInput,
   dependencies: GroundedAnswerDependencies,
 ): AsyncGenerator<GroundedAnswerEvent> {
+  const context = input.context ?? [];
+  const retrievalQuestion = createRetrievalQuestion(
+    input.question,
+    context,
+  );
   const embeddingResult = await runLoggedProviderCall(
     input.organizationId,
     "embedding",
     dependencies.questionEmbeddingProvider,
     dependencies.callLogger,
-    () => dependencies.questionEmbeddingProvider.embed(input.question),
+    () => dependencies.questionEmbeddingProvider.embed(retrievalQuestion),
     dependencies.rateLimitRetry,
   );
 
@@ -155,7 +167,10 @@ export async function* streamGroundedAnswer(
     "rerank",
     dependencies.rerankingProvider,
     dependencies.callLogger,
-    () => dependencies.rerankingProvider.rerank(input.question, candidates),
+    () => dependencies.rerankingProvider.rerank(
+      retrievalQuestion,
+      candidates,
+    ),
     dependencies.rateLimitRetry,
   );
 
@@ -192,6 +207,7 @@ export async function* streamGroundedAnswer(
     try {
       const answerResult = dependencies.answerProvider.streamAnswer({
         question: input.question,
+        context,
         assistant: input.assistant,
         evidence,
       });
@@ -248,6 +264,24 @@ export async function* streamGroundedAnswer(
     type: "complete",
     citations: createCitations(evidence),
   };
+}
+
+function createRetrievalQuestion(
+  question: string,
+  context: ConversationContextMessage[],
+) {
+  if (context.length === 0) {
+    return question;
+  }
+
+  return [
+    "近期会话消息：",
+    ...context.map(({ role, content }) =>
+      `${role === "visitor" ? "访客" : "助手"}：${content}`,
+    ),
+    "当前问题：",
+    question,
+  ].join("\n");
 }
 
 function createGroundedRefusal(

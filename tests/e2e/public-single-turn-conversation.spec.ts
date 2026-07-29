@@ -54,13 +54,13 @@ async function signInAsAdministrator(page: Page, request: APIRequestContext) {
   await expect(page).toHaveURL(/\/admin$/);
 }
 
-test("管理员发布后访客可匿名完成单轮有据咨询，下线后公开入口停止服务", async ({
+test("管理员发布后访客可匿名连续咨询、重试并在下线后停止服务", async ({
   page,
   request,
 }) => {
   const scenarioId = Date.now();
   const sourceTitle = `公开咨询服务说明 ${scenarioId}`;
-  const sourceMarker = `PUBLIC-SERVICE-${scenarioId}`;
+  const sourceMarker = `PUBLIC-SERVICE-${scenarioId}-`.repeat(16);
 
   await signInAsAdministrator(page, request);
   await page.goto("/admin/assistant");
@@ -133,6 +133,25 @@ test("管理员发布后访客可匿名完成单轮有据咨询，下线后公�
   await expect(page.getByLabel("邮箱")).toHaveCount(0);
   await expect(page.getByLabel("电话")).toHaveCount(0);
 
+  const publicMessageRequests: Array<{
+    question: string;
+    conversationId?: string;
+    retry?: boolean;
+  }> = [];
+  page.on("request", (browserRequest) => {
+    if (
+      browserRequest.method() === "POST" &&
+      browserRequest.url().includes("/api/public/assistants/")
+    ) {
+      const payload = browserRequest.postDataJSON() as {
+        question: string;
+        conversationId?: string;
+        retry?: boolean;
+      };
+      publicMessageRequests.push(payload);
+    }
+  });
+
   await page
     .getByLabel("咨询问题")
     .fill(`${sourceMarker} 你们提供什么服务？`);
@@ -145,6 +164,202 @@ test("管理员发布后访客可匿名完成单轮有据咨询，下线后公�
   await expect(
     page.getByRole("link", { name: new RegExp(sourceTitle) }),
   ).toHaveAttribute("href", "https://example.com/public-services");
+
+  await page.getByLabel("咨询问题").fill("它包含实施支持吗？");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText("它包含实施支持吗？", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(/根据当前可用知识/)).toHaveCount(2);
+  await expect(page.getByLabel("咨询问题")).toBeEnabled();
+  expect(publicMessageRequests.slice(0, 2)).toEqual([
+    {
+      question: `${sourceMarker} 你们提供什么服务？`,
+    },
+    {
+      question: "它包含实施支持吗？",
+      conversationId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      ),
+    },
+  ]);
+
+  let retryAttempts = 0;
+  await page.route(
+    `**/api/public/assistants/${publicPath.split("/").at(-1)}/messages`,
+    async (route) => {
+      retryAttempts += 1;
+      await route.fulfill({
+        body:
+          retryAttempts === 1
+            ? `${JSON.stringify({
+                type: "temporary_failure",
+                reason: "provider_failure",
+                message: "供应商服务暂时不可用，请稍后重试。",
+                retryable: true,
+                contact: {
+                  label: "联系业务团队",
+                  url: "https://example.com/contact",
+                },
+              })}\n`
+            : [
+                JSON.stringify({
+                  type: "text_delta",
+                  delta: "重试后得到有据回答。",
+                }),
+                JSON.stringify({
+                  type: "complete",
+                  citations: [],
+                }),
+                "",
+              ].join("\n"),
+        contentType: "application/x-ndjson; charset=utf-8",
+        headers: {
+          "x-conversation-id":
+            "00000000-0000-4000-8000-000000000402",
+        },
+        status: 200,
+      });
+    },
+  );
+  await page.reload();
+  await page.getByLabel("咨询问题").fill("请重试这个问题");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText("请重试这个问题", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("服务暂时不可用", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("现有知识暂时无法确认", { exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "重试", exact: true }).click();
+  await expect(
+    page.getByText("重试后得到有据回答。", { exact: true }),
+  ).toBeVisible();
+  expect(
+    publicMessageRequests.filter(
+      ({ question }) => question === "请重试这个问题",
+    ),
+  ).toEqual([
+    {
+      question: "请重试这个问题",
+    },
+    {
+      question: "请重试这个问题",
+      conversationId: "00000000-0000-4000-8000-000000000402",
+      retry: true,
+    },
+  ]);
+  await page.unroute(
+    `**/api/public/assistants/${publicPath.split("/").at(-1)}/messages`,
+  );
+
+  let rateLimitAttempts = 0;
+  await page.route(
+    `**/api/public/assistants/${publicPath.split("/").at(-1)}/messages`,
+    async (route) => {
+      rateLimitAttempts += 1;
+      await route.fulfill(
+        rateLimitAttempts === 1
+          ? {
+              body: JSON.stringify({
+                code: "rate_limited",
+                message:
+                  "当前会话每分钟最多发送五条消息，请稍后再试。",
+                conversationId:
+                  "00000000-0000-4000-8000-000000000402",
+                canStartNewConversation: false,
+                contact: {
+                  label: "联系业务团队",
+                  url: "https://example.com/contact",
+                },
+              }),
+              contentType: "application/json",
+              status: 429,
+            }
+          : {
+              body: [
+                JSON.stringify({
+                  type: "text_delta",
+                  delta: "限流恢复后重新提交成功。",
+                }),
+                JSON.stringify({
+                  type: "complete",
+                  citations: [],
+                }),
+                "",
+              ].join("\n"),
+              contentType: "application/x-ndjson; charset=utf-8",
+              status: 200,
+            },
+      );
+    },
+  );
+  await page.getByLabel("咨询问题").fill("限流后重新提交");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(
+      "当前会话每分钟最多发送五条消息，请稍后再试。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "重试", exact: true }).click();
+  await expect(
+    page.getByText("限流恢复后重新提交成功。", { exact: true }),
+  ).toBeVisible();
+  expect(
+    publicMessageRequests.filter(
+      ({ question }) => question === "限流后重新提交",
+    ),
+  ).toEqual([
+    {
+      question: "限流后重新提交",
+      conversationId: "00000000-0000-4000-8000-000000000402",
+    },
+    {
+      question: "限流后重新提交",
+      conversationId: "00000000-0000-4000-8000-000000000402",
+    },
+  ]);
+  await page.unroute(
+    `**/api/public/assistants/${publicPath.split("/").at(-1)}/messages`,
+  );
+
+  await page.route(
+    `**/api/public/assistants/${publicPath.split("/").at(-1)}/messages`,
+    async (route) => {
+      await route.fulfill({
+        body: JSON.stringify({
+          code: "question_limit",
+          message: "当前会话已达到三十个问题的上限，请开始新会话。",
+          conversationId: "00000000-0000-4000-8000-000000000401",
+          canStartNewConversation: true,
+          contact: {
+            label: "联系业务团队",
+            url: "https://example.com/contact",
+          },
+        }),
+        contentType: "application/json",
+        status: 409,
+      });
+    },
+  );
+  await page.getByLabel("咨询问题").fill("达到上限的问题");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(
+      "当前会话已达到三十个问题的上限，请开始新会话。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "开始新会话" }).click();
+  await expect(page.getByText("达到上限的问题")).toHaveCount(0);
+  await expect(page.getByLabel("咨询问题")).toBeEnabled();
+  await page.unroute(
+    `**/api/public/assistants/${publicPath.split("/").at(-1)}/messages`,
+  );
 
   await page.route(
     `**/api/public/assistants/${publicPath.split("/").at(-1)}/messages`,

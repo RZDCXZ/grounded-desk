@@ -2,6 +2,7 @@
 
 import {
   Info,
+  MessageSquarePlus,
   Send,
   ShieldCheck,
 } from "lucide-react";
@@ -14,21 +15,26 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
+import type { PublicConversationBlockReason } from "@/lib/assistant/public-conversation";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
 import { cn } from "@/lib/utils";
 
 import type { PublicAssistant } from "./page";
 
 type ConversationResult = {
+  id: string;
   status:
-    | "idle"
     | "streaming"
     | "complete"
     | "refusal"
-    | "temporary_failure";
+    | "temporary_failure"
+    | "limit";
   question: string;
   answer: string;
   citations: GroundedCitation[];
+  code?: PublicConversationBlockReason;
+  canStartNewConversation?: boolean;
+  retryFailedAnswer?: boolean;
   message?: string;
   contact?: {
     label: string;
@@ -44,35 +50,48 @@ export function PublicConversation({
   publicId: string;
 }) {
   const [question, setQuestion] = useState("");
-  const [result, setResult] = useState<ConversationResult>({
-    status: "idle",
-    question: "",
-    answer: "",
-    citations: [],
-  });
+  const [conversationId, setConversationId] = useState<string>();
+  const [results, setResults] = useState<ConversationResult[]>([]);
   const requestController = useRef<AbortController | null>(null);
-  const conversationFinished =
-    result.status === "complete" || result.status === "refusal";
+  const currentResult = results.at(-1);
+  const requestPending = results.some(
+    ({ status }) => status === "streaming",
+  );
+  const conversationLimited = currentResult?.status === "limit";
 
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await requestAnswer(question.trim());
   }
 
-  async function requestAnswer(normalizedQuestion: string) {
-    if (!normalizedQuestion || result.status === "streaming") {
+  async function requestAnswer(
+    normalizedQuestion: string,
+    resultId = crypto.randomUUID(),
+    retry = false,
+  ) {
+    if (!normalizedQuestion || requestPending) {
       return;
     }
 
     const controller = new AbortController();
     requestController.current?.abort();
     requestController.current = controller;
-    setResult({
+    const pendingResult: ConversationResult = {
+      id: resultId,
       status: "streaming",
       question: normalizedQuestion,
       answer: "",
       citations: [],
+    };
+    setResults((current) => {
+      const retryIndex = current.findIndex(({ id }) => id === resultId);
+      return retryIndex < 0
+        ? [...current, pendingResult]
+        : current.map((result, index) =>
+            index === retryIndex ? pendingResult : result,
+          );
     });
+    setQuestion("");
 
     try {
       const response = await fetch(
@@ -82,23 +101,64 @@ export function PublicConversation({
           headers: {
             "content-type": "application/json",
           },
-          body: JSON.stringify({ question: normalizedQuestion }),
+          body: JSON.stringify({
+            question: normalizedQuestion,
+            conversationId,
+            retry: retry || undefined,
+          }),
           signal: controller.signal,
         },
       );
 
-      if (!response.ok || !response.body) {
+      const returnedConversationId = response.headers.get(
+        "x-conversation-id",
+      );
+      if (returnedConversationId) {
+        setConversationId(returnedConversationId);
+      }
+
+      if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as {
+          code?: PublicConversationBlockReason;
           message?: string;
+          conversationId?: string;
+          canStartNewConversation?: boolean;
+          contact?: {
+            label: string;
+            url: string;
+          };
         } | null;
-        throw new Error(
-          payload?.message ?? "暂时无法完成咨询，请稍后重试。",
-        );
+        if (payload?.conversationId) {
+          setConversationId(payload.conversationId);
+        }
+        updateResult(resultId, (current) => ({
+          ...current,
+          status:
+            payload?.code === "daily_budget" ||
+            payload?.canStartNewConversation
+              ? "limit"
+              : "temporary_failure",
+          code: payload?.code,
+          message:
+            payload?.message ?? "暂时无法完成咨询，请稍后重试。",
+          canStartNewConversation:
+            payload?.canStartNewConversation,
+          retryFailedAnswer: false,
+          contact: payload?.contact ?? {
+            label: assistant.human_contact_label,
+            url: assistant.human_contact_url,
+          },
+        }));
+        return;
+      }
+
+      if (!response.body) {
+        throw new Error("暂时无法完成咨询，请稍后重试。");
       }
 
       await consumeAssistantResponseStream(response.body, (streamEvent) => {
         if (streamEvent.type === "text_delta") {
-          setResult((current) => ({
+          updateResult(resultId, (current) => ({
             ...current,
             answer: current.answer + streamEvent.delta,
           }));
@@ -106,7 +166,7 @@ export function PublicConversation({
         }
 
         if (streamEvent.type === "complete") {
-          setResult((current) => ({
+          updateResult(resultId, (current) => ({
             ...current,
             status: "complete",
             citations: streamEvent.citations,
@@ -115,7 +175,7 @@ export function PublicConversation({
         }
 
         if (streamEvent.type === "refusal") {
-          setResult((current) => ({
+          updateResult(resultId, (current) => ({
             ...current,
             status: "refusal",
             message: streamEvent.message,
@@ -124,11 +184,12 @@ export function PublicConversation({
           return;
         }
 
-        setResult((current) => ({
+        updateResult(resultId, (current) => ({
           ...current,
           status: "temporary_failure",
           message: streamEvent.message,
           contact: streamEvent.contact,
+          retryFailedAnswer: true,
         }));
       });
     } catch (error) {
@@ -136,7 +197,7 @@ export function PublicConversation({
         return;
       }
 
-      setResult((current) => ({
+      updateResult(resultId, (current) => ({
         ...current,
         status: "temporary_failure",
         message:
@@ -147,12 +208,32 @@ export function PublicConversation({
           label: assistant.human_contact_label,
           url: assistant.human_contact_url,
         },
+        retryFailedAnswer: false,
       }));
     } finally {
       if (requestController.current === controller) {
         requestController.current = null;
       }
     }
+  }
+
+  function updateResult(
+    resultId: string,
+    update: (current: ConversationResult) => ConversationResult,
+  ) {
+    setResults((current) =>
+      current.map((result) =>
+        result.id === resultId ? update(result) : result,
+      ),
+    );
+  }
+
+  function startNewConversation() {
+    requestController.current?.abort();
+    requestController.current = null;
+    setConversationId(undefined);
+    setResults([]);
+    setQuestion("");
   }
 
   return (
@@ -204,12 +285,27 @@ export function PublicConversation({
               </p>
             </div>
 
-            {result.question ? (
-              <div className="flex justify-end">
-                <div className="max-w-[88%] rounded-xl rounded-tr-sm bg-forest-800 px-4 py-3 text-sm leading-6 text-white">
-                  {result.question}
+            {results.length > 0 ? (
+              results.map((result) => (
+                <div className="space-y-4" key={result.id}>
+                  <div className="flex justify-end">
+                    <div className="max-w-[88%] rounded-xl rounded-tr-sm bg-forest-800 px-4 py-3 text-sm leading-6 text-white">
+                      {result.question}
+                    </div>
+                  </div>
+                  <AssistantResponse
+                    onRetry={() =>
+                      void requestAnswer(
+                        result.question,
+                        result.id,
+                        result.retryFailedAnswer ?? false,
+                      )
+                    }
+                    onStartNewConversation={startNewConversation}
+                    result={result}
+                  />
                 </div>
-              </div>
+              ))
             ) : (
               <div className="rounded-lg border border-line bg-card p-4">
                 <p className="text-[11px] font-semibold text-ink-600">
@@ -221,12 +317,6 @@ export function PublicConversation({
               </div>
             )}
 
-            {result.status !== "idle" ? (
-              <AssistantResponse
-                onRetry={() => void requestAnswer(result.question)}
-                result={result}
-              />
-            ) : null}
           </div>
 
           <form
@@ -243,7 +333,7 @@ export function PublicConversation({
               <Textarea
                 autoComplete="off"
                 className="min-h-20 resize-none bg-paper"
-                disabled={result.status === "streaming" || conversationFinished}
+                disabled={requestPending || conversationLimited}
                 id="public-conversation-question"
                 maxLength={2000}
                 onChange={(event) => setQuestion(event.target.value)}
@@ -252,19 +342,19 @@ export function PublicConversation({
               />
               <Button
                 aria-label={
-                  result.status === "streaming"
+                  requestPending
                     ? "正在生成回答"
                     : "发送问题"
                 }
                 disabled={
-                  result.status === "streaming" ||
-                  conversationFinished ||
+                  requestPending ||
+                  conversationLimited ||
                   question.trim().length === 0
                 }
                 size="icon-large"
                 type="submit"
               >
-                {result.status === "streaming" ? (
+                {requestPending ? (
                   <Spinner label="正在生成回答" />
                 ) : (
                   <Send aria-hidden="true" />
@@ -272,9 +362,7 @@ export function PublicConversation({
               </Button>
             </div>
             <p className="mt-2 text-[11px] text-ink-600">
-              {conversationFinished
-                ? "本次单轮会话已完成。"
-                : "无需注册或提供姓名、邮箱、电话。请勿提交敏感个人信息。"}
+              无需注册或提供姓名、邮箱、电话。请勿提交敏感个人信息。
             </p>
           </form>
         </section>
@@ -285,9 +373,11 @@ export function PublicConversation({
 
 function AssistantResponse({
   onRetry,
+  onStartNewConversation,
   result,
 }: {
   onRetry: () => void;
+  onStartNewConversation: () => void;
   result: ConversationResult;
 }) {
   return (
@@ -298,12 +388,39 @@ function AssistantResponse({
           "min-w-0 flex-1 rounded-xl rounded-tl-sm border bg-card p-4",
           result.status === "temporary_failure"
             ? "border-danger/30 bg-danger-light"
+            : result.status === "limit"
+              ? "border-info/30 bg-info-light"
             : result.status === "refusal"
               ? "border-warning/30 bg-warning-light"
               : "border-line",
         )}
       >
-        {result.status === "temporary_failure" ? (
+        {result.status === "limit" ? (
+          <>
+            <p className="flex items-center gap-2 text-[13px] font-medium text-info">
+              <Info aria-hidden="true" className="size-4" />
+              {result.code === "daily_budget"
+                ? "今日 AI 咨询已暂停"
+                : "当前会话需要重新开始"}
+            </p>
+            <p className="mt-2 text-[13px] leading-6 text-ink-600">
+              {result.message}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {result.canStartNewConversation ? (
+                <Button
+                  onClick={onStartNewConversation}
+                  type="button"
+                  variant="secondary"
+                >
+                  <MessageSquarePlus aria-hidden="true" />
+                  开始新会话
+                </Button>
+              ) : null}
+              <ContactLink contact={result.contact} />
+            </div>
+          </>
+        ) : result.status === "temporary_failure" ? (
           <>
             <p className="flex items-center gap-2 text-[13px] font-medium text-danger">
               <Info aria-hidden="true" className="size-4" />

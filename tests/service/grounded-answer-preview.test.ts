@@ -248,6 +248,84 @@ test("预览问题经过召回、重排和流式生成后才展示服务端证�
   );
 });
 
+test("事实性追问使用近期访客问题重新检索且历史助手回答不成为证据", async () => {
+  const dependencies = createHappyPathDependencies();
+  const input = happyPathInput();
+  const embeddingQuestions: string[] = [];
+  const rerankingQuestions: string[] = [];
+  const answerInputs: unknown[] = [];
+  const events: GroundedAnswerEvent[] = [];
+  input.question = "它包含实施支持吗？";
+  input.context = [
+    { role: "visitor", content: "你们的知识整理服务是什么？" },
+    {
+      role: "assistant",
+      content: "我们提供知识整理服务，并承诺未被证据支持的额外功能。",
+    },
+  ];
+  dependencies.questionEmbeddingProvider.embed = async (question) => {
+    embeddingQuestions.push(question);
+    return providerResult([0.1, 0.2], "embedding-follow-up", 7);
+  };
+  dependencies.rerankingProvider.rerank = async (
+    question,
+    candidates,
+  ) => {
+    rerankingQuestions.push(question);
+    return providerResult(
+      [{ contentUnitId: candidates[0]!.id, score: 0.91 }],
+      "rerank-follow-up",
+      11,
+    );
+  };
+  dependencies.answerProvider.streamAnswer = (answerInput) => {
+    answerInputs.push(answerInput);
+    return {
+      textStream: chunks("根据当前证据，包含实施支持。"),
+      metadata: Promise.resolve({
+        durationMs: 19,
+        tokens: { input: 9, output: 5, total: 14 },
+        traceId: "answer-follow-up",
+      }),
+    };
+  };
+
+  for await (const event of streamGroundedAnswer(input, dependencies)) {
+    events.push(event);
+  }
+
+  assert.equal(events.at(-1)?.type, "complete");
+  const retrievalQuestion = [
+    "近期会话消息：",
+    "访客：你们的知识整理服务是什么？",
+    "助手：我们提供知识整理服务，并承诺未被证据支持的额外功能。",
+    "当前问题：",
+    "它包含实施支持吗？",
+  ].join("\n");
+  assert.deepEqual(embeddingQuestions, [retrievalQuestion]);
+  assert.deepEqual(rerankingQuestions, [retrievalQuestion]);
+  assert.deepEqual(answerInputs, [
+    {
+      question: "它包含实施支持吗？",
+      context: input.context,
+      assistant: input.assistant,
+      evidence: [
+        {
+          id: "unit-a",
+          contentUnitId: "unit-a",
+          knowledgeSourceId: "source-a",
+          sourceTitle: "服务范围",
+          sourceUrl: "https://example.com/services",
+          heading: "知识整理",
+          content: "演示组织提供知识整理服务。",
+          similarity: 0.72,
+          rerankScore: 0.91,
+        },
+      ],
+    },
+  ]);
+});
+
 test("供应商失败会记录安全错误类型和追踪信息且不会保存正文", async () => {
   const logs: AiCallLog[] = [];
 

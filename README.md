@@ -88,6 +88,8 @@ pnpm eval:retrieval -- --json
 - `NEXT_PUBLIC_SUPABASE_URL` 与 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 可以进入浏览器包；数据库 RLS 是最终授权边界。
 - `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY`、`ADMIN_EMAIL` 和 `APP_URL` 仅供服务端使用，禁止添加 `NEXT_PUBLIC_` 前缀。
 - `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 与 `RERANK_EVIDENCE_THRESHOLD` 是统一的服务端检索配置，由整组离线评测校准，不向管理员界面开放。
+- `PUBLIC_DAILY_MESSAGE_BUDGET` 控制公开助手每天最多接受的全局消息数；达到上限后不再调用模型，并向访客保留人工联系入口。
+- `PUBLIC_CONVERSATION_CONTEXT_MESSAGES` 控制追问最多携带的近期消息数；历史消息只用于理解追问，每个事实性问题仍会重新检索知识来源。
 
 本地环境使用 `supabase/config.toml`、固定本地端口和演示种子。云端环境只共享迁移与应用代码，不应上传 `supabase/seed.sql` 中的演示身份或复制本地业务数据；云端密钥必须在部署平台单独配置。
 
