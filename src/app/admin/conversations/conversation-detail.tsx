@@ -41,6 +41,7 @@ type Message = {
 type Citation = {
   id: string;
   message_id: string;
+  factual_request_id: string | null;
   knowledge_source_id: string | null;
   source_title: string;
   source_url: string | null;
@@ -53,6 +54,7 @@ type Feedback = {
 type LinkedQuestion = {
   id: string;
   answer_message_id: string | null;
+  factual_request_id: string | null;
   trigger_type:
     | "grounded_refusal"
     | "negative_feedback"
@@ -63,6 +65,7 @@ type LinkedQuestion = {
 type FactualRequestReview = {
   id: string;
   assistant_message_id: string;
+  request_order: number;
   original_text: string;
   normalized_question: string;
   completeness: "complete" | "incomplete";
@@ -71,6 +74,14 @@ type FactualRequestReview = {
   clarification_round: 0 | 1 | 2;
   request_analysis_version: string;
   response_strategy_version: string;
+  response_content: string | null;
+  response_status:
+    | "supported"
+    | "unsupported"
+    | "conflicting"
+    | "clarification"
+    | "handoff"
+    | null;
 };
 type EvidenceSnapshotReview = {
   id: string;
@@ -122,7 +133,7 @@ export async function ConversationDetail({
       supabase
         .from("citations")
         .select(
-          "id, message_id, knowledge_source_id, source_title, source_url",
+          "id, message_id, factual_request_id, knowledge_source_id, source_title, source_url",
         )
         .eq("organization_id", organization.id)
         .eq("conversation_id", conversationId)
@@ -134,13 +145,13 @@ export async function ConversationDetail({
         .eq("conversation_id", conversationId),
       supabase
         .from("unresolved_questions")
-        .select("id, answer_message_id, trigger_type, status")
+        .select("id, answer_message_id, factual_request_id, trigger_type, status")
         .eq("organization_id", organization.id)
         .eq("conversation_id", conversationId),
       supabase
         .from("message_factual_requests")
         .select(
-          "id, assistant_message_id, original_text, normalized_question, completeness, coverage_status, missing_information, clarification_round, request_analysis_version, response_strategy_version",
+          "id, assistant_message_id, request_order, original_text, normalized_question, completeness, coverage_status, missing_information, clarification_round, request_analysis_version, response_strategy_version, response_content, response_status",
         )
         .eq("organization_id", organization.id)
         .eq("conversation_id", conversationId)
@@ -290,14 +301,14 @@ function ConversationTranscript({
               feedback={feedback.find(
                 ({ answer_message_id }) => answer_message_id === message.id,
               )}
-              evidenceSnapshots={evidenceSnapshots.filter(
-                ({ factual_request_id }) =>
-                  factual_request_id === factualRequests.find(
-                    ({ assistant_message_id }) =>
-                      assistant_message_id === message.id,
-                  )?.id,
+              evidenceSnapshots={evidenceSnapshots.filter(({ factual_request_id }) =>
+                factualRequests.some(
+                  ({ assistant_message_id, id }) =>
+                    assistant_message_id === message.id &&
+                    id === factual_request_id,
+                )
               )}
-              factualRequest={factualRequests.find(
+              factualRequests={factualRequests.filter(
                 ({ assistant_message_id }) =>
                   assistant_message_id === message.id,
               )}
@@ -305,7 +316,7 @@ function ConversationTranscript({
                 selectedQuestion?.answer_message_id === message.id
               }
               key={message.id}
-              linkedQuestion={linkedQuestions.find(
+              linkedQuestions={linkedQuestions.filter(
                 ({ answer_message_id }) => answer_message_id === message.id,
               )}
               message={message}
@@ -332,18 +343,18 @@ function VisitorMessage({ message }: { message: Message }) {
 function AssistantMessage({
   citations,
   evidenceSnapshots,
-  factualRequest,
+  factualRequests,
   feedback,
   highlighted,
-  linkedQuestion,
+  linkedQuestions,
   message,
 }: {
   citations: Citation[];
   evidenceSnapshots: EvidenceSnapshotReview[];
-  factualRequest?: FactualRequestReview;
+  factualRequests: FactualRequestReview[];
   feedback?: Feedback;
   highlighted: boolean;
-  linkedQuestion?: LinkedQuestion;
+  linkedQuestions: LinkedQuestion[];
   message: Message;
 }) {
   const isPending = message.status === "pending";
@@ -352,8 +363,13 @@ function AssistantMessage({
   const isHandoff = message.message_type === "human_handoff";
   const isFailure = message.message_type === "technical_failure";
   const isGroundedAnswer = message.message_type === "grounded_answer";
+  const isPartial = message.message_type === "partially_grounded_answer";
+  const factualRequest = factualRequests[0];
+  const linkedQuestion = linkedQuestions[0];
   const resultType = getAssistantResultType(message);
-  const canHaveReviewMetadata = isGroundedAnswer || isRefusal;
+  const canHaveReviewMetadata =
+    isGroundedAnswer || isPartial || isRefusal;
+  const isMultiRequest = factualRequests.length > 1;
 
   return (
     <article className="flex flex-col items-start gap-2">
@@ -417,25 +433,35 @@ function AssistantMessage({
           />
         ) : null}
 
-        <div
-          className={cn(
-            "text-sm leading-6",
-            (isPending ||
-              isFailure ||
-              isRefusal ||
-              isConflict ||
-              isHandoff) &&
-              "mt-3",
-          )}
-        >
-          {isPending ? (
-            <p>回答仍在生成中。</p>
-          ) : (
-            <ControlledMarkdown>{message.content}</ControlledMarkdown>
-          )}
-        </div>
+        {isMultiRequest ? (
+          <MultiRequestReviewSections
+            citations={citations}
+            evidenceSnapshots={evidenceSnapshots}
+            factualRequests={factualRequests}
+            linkedQuestions={linkedQuestions}
+          />
+        ) : (
+          <div
+            className={cn(
+              "text-sm leading-6",
+              (isPending ||
+                isFailure ||
+                isRefusal ||
+                isConflict ||
+                isHandoff) &&
+                "mt-3",
+            )}
+          >
+            {isPending ? (
+              <p>回答仍在生成中。</p>
+            ) : (
+              <ControlledMarkdown>{message.content}</ControlledMarkdown>
+            )}
+          </div>
+        )}
 
-        {factualRequest?.completeness === "incomplete" ? (
+        {!isMultiRequest &&
+        factualRequest?.completeness === "incomplete" ? (
           <div className="mt-4 border-t border-info/20 pt-3 text-[11px] leading-5 text-ink-600">
             <p className="font-semibold text-info">
               {isHandoff
@@ -449,7 +475,7 @@ function AssistantMessage({
           </div>
         ) : null}
 
-        {isGroundedAnswer && citations.length > 0 ? (
+        {!isMultiRequest && isGroundedAnswer && citations.length > 0 ? (
           <div className="mt-4 border-t border-line pt-3">
             <p className="mb-2 text-[11px] font-semibold text-ink-600">
               回答依据
@@ -462,7 +488,7 @@ function AssistantMessage({
           </div>
         ) : null}
 
-        {isConflict && evidenceSnapshots.length > 0 ? (
+        {!isMultiRequest && isConflict && evidenceSnapshots.length > 0 ? (
           <div className="mt-4 border-t border-warning/20 pt-3">
             <p className="mb-2 text-[11px] font-semibold text-warning">
               冲突来源
@@ -536,7 +562,9 @@ function AssistantMessage({
           </div>
         ) : null}
 
-        {(canHaveReviewMetadata || isConflict) && linkedQuestion ? (
+        {!isMultiRequest &&
+        (canHaveReviewMetadata || isConflict) &&
+        linkedQuestion ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/20 bg-warning-light/60 p-3">
             <span className="text-[11px] text-warning">
               已关联{linkedQuestion.status === "pending" ? "待处理" : "已解决"}
@@ -609,6 +637,132 @@ function ConflictSnapshotCard({
   ) : (
     <div className={className}>{content}</div>
   );
+}
+
+function MultiRequestReviewSections({
+  citations,
+  evidenceSnapshots,
+  factualRequests,
+  linkedQuestions,
+}: {
+  citations: Citation[];
+  evidenceSnapshots: EvidenceSnapshotReview[];
+  factualRequests: FactualRequestReview[];
+  linkedQuestions: LinkedQuestion[];
+}) {
+  return (
+    <div className="mt-3 space-y-4">
+      {factualRequests.map((request) => {
+        const requestCitations = citations.filter(
+          ({ factual_request_id }) => factual_request_id === request.id,
+        );
+        const requestSnapshots = evidenceSnapshots.filter(
+          ({ factual_request_id }) => factual_request_id === request.id,
+        );
+        const requestQuestion = linkedQuestions.find(
+          ({ factual_request_id }) => factual_request_id === request.id,
+        );
+        const presentation = requestReviewPresentation(request);
+
+        return (
+          <section
+            className="rounded-lg border border-line bg-card p-4"
+            key={request.id}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h3 className="text-[12px] font-semibold text-forest-950">
+                {request.request_order}. {request.original_text}
+              </h3>
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                  presentation.className,
+                )}
+              >
+                {presentation.label}
+              </span>
+            </div>
+            <div className="mt-3 text-[13px] leading-6 text-ink-700">
+              <ControlledMarkdown>
+                {request.response_content ?? "未保存逐项响应正文"}
+              </ControlledMarkdown>
+            </div>
+
+            {requestCitations.length > 0 ? (
+              <div className="mt-4 border-t border-line pt-3">
+                <p className="mb-2 text-[11px] font-semibold text-ink-600">
+                  {request.coverage_status === "conflicting"
+                    ? "冲突来源"
+                    : "回答依据"}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {requestCitations.map((citation) => (
+                    <CitationCard citation={citation} key={citation.id} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {requestSnapshots.length > 0 ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {requestSnapshots.map((snapshot) => (
+                  <ConflictSnapshotCard
+                    key={snapshot.id}
+                    snapshot={snapshot}
+                  />
+                ))}
+              </div>
+            ) : null}
+
+            {request.completeness === "incomplete" ? (
+              <p className="mt-3 text-[11px] text-info">
+                第 {request.clarification_round} 轮 · 仍缺少：
+                {request.missing_information.join("、")}
+              </p>
+            ) : null}
+
+            {requestQuestion ? (
+              <Link
+                className="mt-3 inline-flex text-[11px] font-semibold text-warning hover:underline"
+                href={`/admin/unresolved-questions?status=${requestQuestion.status}&question=${requestQuestion.id}`}
+              >
+                查看此诉求的
+                {requestQuestion.status === "pending" ? "待处理" : "已解决"}
+                问题
+              </Link>
+            ) : null}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function requestReviewPresentation(request: FactualRequestReview) {
+  if (request.coverage_status === "supported") {
+    return {
+      label: "已回答",
+      className: "border-success/25 bg-success-light text-success",
+    };
+  }
+  if (request.coverage_status === "unsupported") {
+    return {
+      label: "暂无法确认",
+      className: "border-warning/25 bg-warning-light text-warning",
+    };
+  }
+  if (request.coverage_status === "conflicting") {
+    return {
+      label: "知识存在冲突",
+      className: "border-warning/25 bg-warning-light text-warning",
+    };
+  }
+  return {
+    label: request.response_status === "handoff"
+      ? "需要人工协助"
+      : "需要补充信息",
+    className: "border-info/25 bg-info-light text-info",
+  };
 }
 
 function ResultHeading({

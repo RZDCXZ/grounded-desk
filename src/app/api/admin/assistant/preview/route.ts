@@ -1,6 +1,6 @@
 import { createAssistantPreviewResponse } from "@/lib/assistant/preview-response";
 import {
-  streamStructuredAssistantResponse,
+  streamStructuredSectionedAssistantResponse,
 } from "@/lib/assistant/request-analysis";
 import type {
   ConversationContextMessage,
@@ -8,7 +8,6 @@ import type {
 import type {
   ClarificationThreadState,
 } from "@/lib/assistant/response-decision-audit";
-import { streamSingleSectionResponse } from "@/lib/assistant/response-sections";
 import { createSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
 import { createSupabaseRequestAnalysisDependencies } from "@/lib/assistant/supabase-request-analysis";
 import { requireAdministrator } from "@/lib/auth/require-admin";
@@ -55,6 +54,7 @@ export async function POST(request: Request) {
     question,
     context: questionResult.context,
     clarificationState: questionResult.clarificationState,
+    clarificationStates: questionResult.clarificationStates,
     assistant: assistantConfiguration,
     factualRequestId,
   };
@@ -62,16 +62,13 @@ export async function POST(request: Request) {
     createSupabaseRequestAnalysisDependencies(supabase);
 
   return createAssistantPreviewResponse(
-    streamSingleSectionResponse(
-      streamStructuredAssistantResponse(
-        analysisInput,
-        {
-          requestAnalysis: analysisDependencies,
-          groundedAnswer:
-            createSupabaseGroundedAnswerDependencies(supabase),
-        },
-      ),
-      factualRequestId,
+    streamStructuredSectionedAssistantResponse(
+      analysisInput,
+      {
+        requestAnalysis: analysisDependencies,
+        groundedAnswer:
+          createSupabaseGroundedAnswerDependencies(supabase),
+      },
     ),
     {
       label: assistant.human_contact_label,
@@ -111,6 +108,12 @@ async function readQuestion(request: Request) {
     "clarificationState" in payload
       ? readClarificationState(payload.clarificationState)
       : undefined;
+  const clarificationStates =
+    typeof payload === "object" &&
+    payload !== null &&
+    "clarificationStates" in payload
+      ? readClarificationStates(payload.clarificationStates)
+      : undefined;
 
   if (!question) {
     return {
@@ -126,7 +129,11 @@ async function readQuestion(request: Request) {
     };
   }
 
-  if (!previewContext || clarificationState === null) {
+  if (
+    !previewContext ||
+    clarificationState === null ||
+    clarificationStates === null
+  ) {
     return {
       status: "invalid" as const,
       message: "预览会话上下文无效。",
@@ -138,7 +145,20 @@ async function readQuestion(request: Request) {
     question,
     context: previewContext,
     clarificationState,
+    clarificationStates,
   };
+}
+
+function readClarificationStates(
+  value: unknown,
+): ClarificationThreadState[] | null {
+  if (!Array.isArray(value) || value.length > 3) {
+    return null;
+  }
+  const states = value.map(readClarificationState);
+  return states.some((state) => state === null)
+    ? null
+    : states as ClarificationThreadState[];
 }
 
 function readClarificationState(
@@ -214,6 +234,8 @@ function isPreviewContextResultType(
   value: unknown,
 ): value is NonNullable<ConversationContextMessage["resultType"]> {
   return value === "grounded_answer" ||
+    value === "partially_grounded_answer" ||
+    value === "knowledge_conflict" ||
     value === "grounded_refusal" ||
     value === "conversational_response" ||
     value === "clarification_request" ||

@@ -17,6 +17,7 @@ import { BrandMark } from "@/components/admin/brand-mark";
 import { CitationList } from "@/components/assistant/citation-list";
 import { ConflictSourceList } from "@/components/assistant/conflict-source-list";
 import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
+import { ResponseSectionList } from "@/components/assistant/response-section-list";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,7 +26,11 @@ import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
 import type { PublicConversationBlockReason } from "@/lib/assistant/public-conversation";
 import type { QualityFeedbackValue } from "@/lib/assistant/quality-feedback";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
-import { reduceAssistantResponsePresentation } from "@/lib/assistant/response-sections";
+import {
+  PARTIAL_ANSWER_FEEDBACK_PROMPT,
+  reduceAssistantResponsePresentation,
+  type ResponseSection,
+} from "@/lib/assistant/response-sections";
 import { cn } from "@/lib/utils";
 
 import type { PublicAssistant } from "./page";
@@ -37,6 +42,7 @@ type ConversationResultBase = {
   question: string;
   answer: string;
   citations: GroundedCitation[];
+  sections?: ResponseSection[];
   messageId?: string;
   feedback?: QualityFeedbackValue;
   feedbackStatus?: "submitting" | "error";
@@ -598,29 +604,54 @@ function AssistantResponse({
           </>
         ) : (
           <>
-            <div className="text-sm leading-6">
-              <ControlledMarkdown>{result.answer}</ControlledMarkdown>
-              {result.status === "streaming" ? (
-                <Spinner
-                  className="ml-1 inline size-3 align-text-bottom text-forest-800"
-                  label="正在生成回答"
-                />
-              ) : null}
-            </div>
-            {result.status === "complete" &&
-            result.resultType === "grounded_answer" ? (
-              <CitationList citations={result.citations} />
-            ) : null}
+            {result.sections ? (
+              <>
+                <ResponseSectionList sections={result.sections} />
+                {result.status === "streaming" && result.answer ? (
+                  <div className="mt-4 text-sm leading-6">
+                    <ControlledMarkdown>{result.answer}</ControlledMarkdown>
+                    <Spinner
+                      className="ml-1 inline size-3 align-text-bottom text-forest-800"
+                      label="正在生成回答"
+                    />
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="text-sm leading-6">
+                  <ControlledMarkdown>{result.answer}</ControlledMarkdown>
+                  {result.status === "streaming" ? (
+                    <Spinner
+                      className="ml-1 inline size-3 align-text-bottom text-forest-800"
+                      label="正在生成回答"
+                    />
+                  ) : null}
+                </div>
+                {result.status === "complete" &&
+                result.resultType === "grounded_answer" ? (
+                  <CitationList citations={result.citations} />
+                ) : null}
+              </>
+            )}
           </>
         )}
         {((result.status === "complete" &&
-          result.resultType === "grounded_answer") ||
+          (result.resultType === "grounded_answer" ||
+            result.resultType === "partially_grounded_answer" ||
+            result.resultType === "grounded_refusal")) ||
           result.status === "refusal") &&
         result.messageId ? (
           <QualityFeedbackControls
             feedback={result.feedback}
             messageId={result.messageId}
             onFeedback={onFeedback}
+            prompt={
+              result.status === "complete" &&
+              result.resultType === "partially_grounded_answer"
+                ? PARTIAL_ANSWER_FEEDBACK_PROMPT
+                : undefined
+            }
             status={result.feedbackStatus}
           />
         ) : null}
@@ -633,6 +664,7 @@ function QualityFeedbackControls({
   feedback,
   messageId,
   onFeedback,
+  prompt,
   status,
 }: {
   feedback?: QualityFeedbackValue;
@@ -641,12 +673,16 @@ function QualityFeedbackControls({
     messageId: string,
     value: QualityFeedbackValue,
   ) => void;
+  prompt?: string;
   status?: "submitting" | "error";
 }) {
   const disabled = Boolean(feedback) || status === "submitting";
 
   return (
     <div className="mt-4 border-t border-line pt-3">
+      {prompt ? (
+        <p className="mb-2 text-[12px] font-medium text-ink-700">{prompt}</p>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div
           aria-label="评价这条助手回答"

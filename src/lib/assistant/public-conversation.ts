@@ -25,6 +25,7 @@ export type PublicConversationStart = {
   assistantMessageId: string;
   organizationId: string;
   clarificationState?: ClarificationThreadState;
+  clarificationStates?: ClarificationThreadState[];
   context?: ConversationContextMessage[];
   assistant: {
     name: string;
@@ -68,12 +69,18 @@ type PublicConversationDependencies = {
   ): Promise<
     PublicConversationStart | PublicConversationBlocked | null
   >;
-  streamAnswer(
+  streamAnswer?(
     start: PublicConversationStart & {
       question: string;
       factualRequestId: string;
     },
   ): AsyncIterable<AssistantResponseEvent>;
+  streamSectionedAnswer?(
+    start: PublicConversationStart & {
+      question: string;
+      factualRequestId: string;
+    },
+  ): AsyncIterable<SectionedAssistantResponseEvent>;
   completeConversation(
     start: PublicConversationStart,
     outcome: PublicConversationOutcome,
@@ -125,15 +132,22 @@ export async function createPublicConversationResponse(
   }
 
   const factualRequestId = crypto.randomUUID();
-  const events = dependencies.streamAnswer({
+  const answerInput = {
     ...conversation,
     question: questionResult.question,
     factualRequestId,
-  });
-  const sectionEvents = streamSingleSectionResponse(
-    events,
-    factualRequestId,
-  );
+  };
+  const sectionEvents = dependencies.streamSectionedAnswer
+    ? dependencies.streamSectionedAnswer(answerInput)
+    : dependencies.streamAnswer
+      ? streamSingleSectionResponse(
+          dependencies.streamAnswer(answerInput),
+          factualRequestId,
+        )
+      : null;
+  if (!sectionEvents) {
+    throw new Error("公开会话缺少回答流");
+  }
   const response = createAssistantPreviewResponse(
     persistConversationOutcome(
       sectionEvents,

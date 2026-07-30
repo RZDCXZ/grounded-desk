@@ -16,9 +16,18 @@ import {
   streamAnalyzedAssistantResponse,
   type RequestAnalysis,
 } from "../../src/lib/assistant/request-analysis.ts";
-import type { ResponseSection } from "../../src/lib/assistant/response-sections.ts";
-import type {
-  AssistantDecisionAudit,
+import {
+  streamMultiRequestResponse,
+} from "../../src/lib/assistant/multi-request-response.ts";
+import {
+  reduceAssistantResponsePresentation,
+  type ResponseSection,
+  type SectionedAssistantResponseEvent,
+} from "../../src/lib/assistant/response-sections.ts";
+import {
+  responseDecisionAuditSymbol,
+  type AssistantDecisionAudit,
+  type MultiRequestDecisionAudit,
 } from "../../src/lib/assistant/response-decision-audit.ts";
 
 const publicId = "00000000-0000-4000-8000-000000000301";
@@ -321,17 +330,209 @@ test("公开消息接口将知识冲突作为独立结果返回并携带双方�
   });
 });
 
-test("多事实诉求在逐项编排落地前不错误绑定单项审计身份", async () => {
-  const result = await runPublicKnowledgeScenario(
-    "退款多久到账，也可以开发票吗？",
+test("公开消息接口按原顺序流式返回并持久化三个独立事实诉求", async () => {
+  const outcomes: PublicConversationOutcome[] = [];
+  const completedSections: ResponseSection[][] = [];
+  const audits: AssistantDecisionAudit[] = [];
+  const sections: ResponseSection[] = [
     {
-      hasEvidence: true,
-      multipleFactualRequests: true,
+      id: "00000000-0000-4000-8000-000000001901",
+      order: 1,
+      title: "退款多久到账？",
+      status: "supported",
+      content: "退款会在两个工作日内到账。",
+      citations: [
+        {
+          knowledgeSourceId: "source-refund",
+          title: "退款说明",
+          url: "https://example.com/refunds",
+        },
+      ],
+    },
+    {
+      id: "00000000-0000-4000-8000-000000001902",
+      order: 2,
+      title: "可以开发票吗？",
+      status: "unsupported",
+      content: "当前可用知识不足以支持这个问题的事实性回答。",
+      citations: [],
+      contact: {
+        label: "联系业务团队",
+        url: "https://example.com/contact",
+      },
+    },
+    {
+      id: "00000000-0000-4000-8000-000000001903",
+      order: 3,
+      title: "退款时效是否一致？",
+      status: "conflicting",
+      content: "现有知识存在无法同时成立的信息。",
+      citations: [
+        {
+          knowledgeSourceId: "source-refund",
+          contentUnitId: "unit-refund",
+          title: "退款说明",
+          url: "https://example.com/refunds",
+          exactExcerpt: "退款会在两个工作日内到账。",
+        },
+        {
+          knowledgeSourceId: "source-refund-update",
+          contentUnitId: "unit-refund-update",
+          title: "退款更新",
+          url: null,
+          exactExcerpt: "退款会在五个工作日内到账。",
+        },
+      ],
+    },
+  ];
+  const audit: MultiRequestDecisionAudit = {
+    version: "multi-request-decision-v1",
+    requestAnalysisVersion: "request-analysis-v1",
+    responseStrategyVersion: "multi-request-response-v1",
+    resultType: "partially_grounded_answer",
+    requests: sections.map((section) => ({
+      factualRequest: {
+        id: section.id,
+        order: section.order,
+        originalText: section.title!,
+        normalizedQuestion: section.title!,
+        completeness: "complete",
+        missingInformation: [],
+        clarificationRound: 0,
+      },
+      outcome: section.status === "supported"
+        ? "supported"
+        : section.status === "conflicting"
+          ? "conflicting"
+          : "unsupported",
+      coverage: {
+        version: "evidence-coverage-v1",
+        factualRequestId: section.id,
+        status: section.status === "supported"
+          ? "supported"
+          : section.status === "conflicting"
+            ? "conflicting"
+            : "unsupported",
+        evidence: [],
+      },
+    })),
+  };
+  const response = await createPublicConversationResponse(
+    questionRequest("退款多久到账？可以开发票吗？退款时效是否一致？"),
+    publicId,
+    {
+      async beginConversation() {
+        return publicConversationStart();
+      },
+      streamSectionedAnswer() {
+        return streamMultiRequestResponse(
+          {
+            version: "request-analysis-v1",
+            language: "zh",
+            interactionType: "factual",
+            conversationalIntent: null,
+            factualRequests: sections.map((section) => ({
+              id: section.id,
+              order: section.order,
+              originalText: section.title!,
+              normalizedQuestion: section.title!,
+              completeness: "complete" as const,
+              missingInformation: [],
+              clarificationRound: 0 as const,
+              requiresHumanHandoff: false,
+            })),
+          },
+          {
+            assistant: {
+              humanContactLabel: "联系业务团队",
+              humanContactUrl: "https://example.com/contact",
+            },
+            streamCompleteRequest(request) {
+              const section = sections[request.order - 1]!;
+              return (async function* () {
+                if (section.status !== "unsupported") {
+                  yield {
+                    type: "text_delta" as const,
+                    delta: section.content,
+                  };
+                }
+                const event: AssistantResponseEvent =
+                  section.status === "unsupported"
+                    ? {
+                        type: "refusal",
+                        resultType: "grounded_refusal",
+                        message: section.content,
+                        contact: section.contact!,
+                      }
+                    : {
+                        type: "complete",
+                        resultType:
+                          section.status === "conflicting"
+                            ? "knowledge_conflict"
+                            : "grounded_answer",
+                        citations: section.citations,
+                      };
+                Object.defineProperty(
+                  event,
+                  responseDecisionAuditSymbol,
+                  {
+                    value: {
+                      factualRequest: {
+                        id: request.id,
+                        originalText: request.originalText,
+                        normalizedQuestion: request.normalizedQuestion,
+                        requestAnalysisVersion: "request-analysis-v1",
+                      },
+                      coverage: audit.requests[request.order - 1]!
+                        .coverage!,
+                    },
+                    enumerable: false,
+                  },
+                );
+                yield event;
+              })();
+            },
+          },
+        );
+      },
+      async completeConversation(_start, outcome, resultSections, decision) {
+        outcomes.push(outcome);
+        completedSections.push(resultSections);
+        if (decision) {
+          audits.push(decision);
+        }
+      },
+      async failConversation() {
+        assert.fail("逐项回答不应保存为技术故障");
+      },
     },
   );
 
-  assert.equal(result.outcomes[0]?.type, "grounded_answer");
-  assert.deepEqual(result.audits, []);
+  const rawEvents = await readRawNdjson(response);
+  assert.deepEqual(
+    rawEvents
+      .filter(({ type }) => type === "section_complete")
+      .map(({ section }) => (section as ResponseSection).status),
+    ["supported", "unsupported", "conflicting"],
+  );
+  assert.equal(outcomes[0]?.type, "partially_grounded_answer");
+  assert.deepEqual(completedSections, [sections]);
+  assert.deepEqual(audits, [audit]);
+  let presentation: {
+    answer: string;
+    citations: ResponseSection["citations"];
+    sections?: ResponseSection[];
+  } = { answer: "", citations: [] };
+  for (const event of rawEvents) {
+    const update = reduceAssistantResponsePresentation(
+      presentation,
+      event as SectionedAssistantResponseEvent,
+    );
+    if (update) {
+      presentation = update;
+    }
+  }
+  assert.deepEqual(presentation.sections, sections);
 });
 
 test("公开消息接口在澄清后结合近期上下文重新检索成功", async () => {
@@ -1174,7 +1375,6 @@ async function runPublicKnowledgeScenario(
     context?: ConversationContextMessage[];
     hasEvidence?: boolean;
     hasConflict?: boolean;
-    multipleFactualRequests?: boolean;
   } = {},
 ) {
   const embeddingQuestions: string[] = [];
@@ -1221,31 +1421,7 @@ async function runPublicKnowledgeScenario(
                     },
                   ],
                 }
-              : options.multipleFactualRequests
-                ? {
-                    ...factualAnalysis(question),
-                    factualRequests: [
-                      {
-                        id:
-                          "00000000-0000-4000-8000-000000001806",
-                        order: 1,
-                        originalText: "退款多久到账？",
-                        normalizedQuestion: "退款多久到账？",
-                        completeness: "complete",
-                        missingInformation: [],
-                      },
-                      {
-                        id:
-                          "00000000-0000-4000-8000-000000001807",
-                        order: 2,
-                        originalText: "可以开发票吗？",
-                        normalizedQuestion: "可以开发票吗？",
-                        completeness: "complete",
-                        missingInformation: [],
-                      },
-                    ],
-                  }
-                : factualAnalysis(question);
+              : factualAnalysis(question);
           },
           streamKnowledgeResponse(analysis) {
             return streamGroundedAnswer(

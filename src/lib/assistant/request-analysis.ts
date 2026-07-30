@@ -19,6 +19,13 @@ import {
   type ClarificationDecisionAudit,
   type ClarificationThreadState,
 } from "./response-decision-audit.ts";
+import {
+  streamMultiRequestResponse,
+} from "./multi-request-response.ts";
+import {
+  streamSingleSectionResponse,
+  type SectionedAssistantResponseEvent,
+} from "./response-sections.ts";
 
 const REQUEST_ANALYSIS_VERSION = "request-analysis-v1";
 const MAXIMUM_FACTUAL_REQUESTS = 3;
@@ -65,6 +72,7 @@ export type RequestAnalysisInput = {
   question: string;
   factualRequestId?: string;
   clarificationState?: ClarificationThreadState;
+  clarificationStates?: ClarificationThreadState[];
   context?: ConversationContextMessage[];
   assistant: {
     name: string;
@@ -178,14 +186,19 @@ function deriveClarificationStates(
   input: RequestAnalysisInput,
   candidate: RequestAnalysisCandidate,
 ) {
-  const thread = input.clarificationState
-    ? {
-        originalText: input.clarificationState.originalText,
-        rounds: input.clarificationState.round,
-        latestClarification:
-          input.clarificationState.latestClarification,
-      }
-    : findTrailingClarificationThread(input.context ?? []);
+  const explicitThreads = input.clarificationStates ??
+    (input.clarificationState ? [input.clarificationState] : []);
+  const contextualThread = explicitThreads.length === 0
+    ? findTrailingClarificationThread(input.context ?? [])
+    : null;
+  const threads = explicitThreads.map((thread) => ({
+    originalText: thread.originalText,
+    rounds: thread.round,
+    latestClarification: thread.latestClarification,
+  }));
+  if (contextualThread) {
+    threads.push(contextualThread);
+  }
   const states: Array<{
     clarificationRound: 0 | 1 | 2;
     requiresHumanHandoff: boolean;
@@ -200,8 +213,13 @@ function deriveClarificationStates(
       continue;
     }
 
+    const thread = threads.find(
+      (candidateThread) =>
+        normalizedText(request.originalText) ===
+        normalizedText(candidateThread.originalText),
+    );
     const continuesThread =
-      thread !== null &&
+      thread !== undefined &&
       normalizedText(request.originalText) ===
         normalizedText(thread.originalText);
     const previousRounds = continuesThread ? thread.rounds : 0;
@@ -258,7 +276,7 @@ function findTrailingClarificationThread(
 
   return rounds > 0
     ? {
-        rounds: Math.min(rounds, 2),
+        rounds: Math.min(rounds, 2) as 1 | 2,
         originalText,
         latestClarification,
       }
@@ -430,6 +448,69 @@ export function streamStructuredAssistantResponse(
                 requestAnalysisVersion: analysis.version,
               }
             : undefined,
+        },
+        dependencies.groundedAnswer,
+      );
+    },
+  });
+}
+
+export async function* streamStructuredSectionedAssistantResponse(
+  input: StructuredAssistantResponseInput,
+  dependencies: {
+    requestAnalysis: RequestAnalysisDependencies;
+    groundedAnswer: GroundedAnswerDependencies;
+  },
+): AsyncGenerator<SectionedAssistantResponseEvent> {
+  const analysis = await analyzeAssistantRequest(
+    input,
+    dependencies.requestAnalysis,
+  );
+
+  if (analysis.factualRequests.length <= 1) {
+    yield* streamSingleSectionResponse(
+      streamAnalyzedAssistantResponse(input, {
+        async analyzeRequest() {
+          return analysis;
+        },
+        streamKnowledgeResponse(currentAnalysis) {
+          const request = currentAnalysis.factualRequests[0];
+          return streamGroundedAnswer(
+            {
+              ...input,
+              question: request?.normalizedQuestion ?? input.question,
+              factualRequest: request
+                ? {
+                    id: input.factualRequestId ?? request.id,
+                    originalText: request.originalText,
+                    normalizedQuestion: request.normalizedQuestion,
+                    requestAnalysisVersion: currentAnalysis.version,
+                  }
+                : undefined,
+            },
+            dependencies.groundedAnswer,
+          );
+        },
+      }),
+      input.factualRequestId ?? analysis.factualRequests[0]?.id ??
+        crypto.randomUUID(),
+    );
+    return;
+  }
+
+  yield* streamMultiRequestResponse(analysis, {
+    assistant: input.assistant,
+    streamCompleteRequest(request) {
+      return streamGroundedAnswer(
+        {
+          ...input,
+          question: request.normalizedQuestion,
+          factualRequest: {
+            id: request.id,
+            originalText: request.originalText,
+            normalizedQuestion: request.normalizedQuestion,
+            requestAnalysisVersion: analysis.version,
+          },
         },
         dependencies.groundedAnswer,
       );

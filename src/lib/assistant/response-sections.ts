@@ -10,6 +10,9 @@ import {
 } from "./response-decision-audit.ts";
 import type { ConversationResultType } from "./conversation-result.ts";
 
+export const PARTIAL_ANSWER_FEEDBACK_PROMPT =
+  "以上已回答部分有帮助吗？";
+
 export type ResponseSectionStatus =
   | "supported"
   | "unsupported"
@@ -21,6 +24,7 @@ export type ResponseSectionStatus =
 export type ResponseSection = {
   id: string;
   order: number;
+  title?: string;
   status: ResponseSectionStatus;
   content: string;
   citations: GroundedCitation[];
@@ -53,6 +57,7 @@ export type SectionedAssistantResponseEvent =
       resultType: ConversationResultType;
       sections: ResponseSection[];
       clarificationState?: ClarificationThreadState;
+      clarificationStates?: ClarificationThreadState[];
     };
 
 export type AuditedSectionedAssistantResponseEvent =
@@ -63,6 +68,7 @@ export type AuditedSectionedAssistantResponseEvent =
 type AssistantResponsePresentationState = {
   answer: string;
   citations: GroundedCitation[];
+  sections?: ResponseSection[];
 };
 
 export type AssistantResponsePresentationUpdate =
@@ -98,51 +104,41 @@ export function reduceAssistantResponsePresentation(
   current: AssistantResponsePresentationState,
   event: SectionedAssistantResponseEvent | LegacyAssistantResponseEvent,
 ): AssistantResponsePresentationUpdate | undefined {
+  if (event.type === "section_start") {
+    return {
+      status: "streaming",
+      answer: "",
+      citations: [],
+      ...(current.sections ? { sections: current.sections } : {}),
+    };
+  }
+
   if (event.type === "text_delta" || event.type === "section_delta") {
     return {
       status: "streaming",
       answer: current.answer + event.delta,
       citations: current.citations,
+      ...(current.sections ? { sections: current.sections } : {}),
     };
   }
 
   if (event.type === "section_complete") {
-    if (event.section.status === "handoff") {
-      if (!event.section.contact) {
-        throw new Error("人工接续分段缺少联系入口");
-      }
-      return {
-        status: "handoff",
-        answer: current.answer,
-        citations: [],
-        message: event.section.content,
-        contact: event.section.contact,
-      };
-    }
-
-    if (event.section.status === "unsupported") {
-      return {
-        status: "refusal",
-        answer: current.answer,
-        citations: [],
-        message: event.section.content,
-        contact: event.section.contact,
-      };
-    }
-
-    if (event.section.status === "conflicting") {
-      return {
-        status: "conflict",
-        answer: current.answer,
-        citations: event.section.citations,
-        message: event.section.content,
-      };
+    const sections = [
+      ...(current.sections ?? []),
+      event.section,
+    ];
+    if (
+      event.section.status === "handoff" &&
+      !event.section.contact
+    ) {
+      throw new Error("人工接续分段缺少联系入口");
     }
 
     return {
       status: "streaming",
-      answer: event.section.content,
-      citations: event.section.citations,
+      answer: "",
+      citations: [],
+      sections,
     };
   }
 
@@ -156,19 +152,58 @@ export function reduceAssistantResponsePresentation(
   }
 
   if (event.type === "message_complete") {
-    if (
-      event.resultType === "grounded_refusal" ||
-      event.resultType === "knowledge_conflict" ||
-      event.resultType === "human_handoff"
-    ) {
-      return undefined;
+    if (event.sections.length > 1) {
+      return {
+        status: "complete",
+        resultType: event.resultType,
+        answer: "",
+        citations: event.sections.flatMap(
+          ({ citations }) => citations,
+        ),
+        sections: event.sections,
+      };
+    }
+
+    const section = event.sections[0];
+    if (event.resultType === "grounded_refusal" && section) {
+      return {
+        status: "refusal",
+        answer: "",
+        citations: [],
+        message: section.content,
+        contact: section.contact,
+        sections: event.sections,
+      };
+    }
+    if (event.resultType === "knowledge_conflict" && section) {
+      return {
+        status: "conflict",
+        answer: "",
+        citations: section.citations,
+        message: section.content,
+        sections: event.sections,
+      };
+    }
+    if (event.resultType === "human_handoff" && section?.contact) {
+      return {
+        status: "handoff",
+        answer: "",
+        citations: [],
+        message: section.content,
+        contact: section.contact,
+        sections: event.sections,
+      };
     }
 
     return {
       status: "complete",
       resultType: event.resultType,
-      answer: current.answer,
-      citations: current.citations,
+      answer: section?.content ?? current.answer,
+      citations: section?.citations ?? current.citations,
+      ...(event.resultType === "partially_grounded_answer" ||
+          event.sections.length > 1
+        ? { sections: event.sections }
+        : {}),
     };
   }
 

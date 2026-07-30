@@ -4,7 +4,7 @@ import {
   type PublicConversationStart,
 } from "@/lib/assistant/public-conversation";
 import {
-  streamStructuredAssistantResponse,
+  streamStructuredSectionedAssistantResponse,
 } from "@/lib/assistant/request-analysis";
 import { selectCompletionProcedure } from "@/lib/assistant/conversation-persistence";
 import { createPublicSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
@@ -30,6 +30,11 @@ type PublicConversationRow = {
   clarification_original_text: string | null;
   clarification_round: 1 | 2 | null;
   clarification_content: string | null;
+  clarification_states: Array<{
+    originalText: string;
+    round: 1 | 2;
+    latestClarification: string;
+  }> | null;
 };
 
 export async function POST(
@@ -88,12 +93,13 @@ export async function POST(
       const conversation = mapConversation(row, conversationId);
       return conversation;
     },
-    streamAnswer(conversation) {
+    streamSectionedAnswer(conversation) {
       const analysisInput = {
         organizationId: conversation.organizationId,
         question: conversation.question,
         context: conversation.context,
         clarificationState: conversation.clarificationState,
+        clarificationStates: conversation.clarificationStates,
         assistant: conversation.assistant,
         factualRequestId: conversation.factualRequestId,
       };
@@ -103,7 +109,7 @@ export async function POST(
           publicId,
         );
 
-      return streamStructuredAssistantResponse(
+      return streamStructuredSectionedAssistantResponse(
         analysisInput,
         {
           requestAnalysis: analysisDependencies,
@@ -129,6 +135,9 @@ export async function POST(
             : {}),
           ...(audit && "outcome" in audit
             ? { clarification_decision: audit }
+            : {}),
+          ...(audit && "requests" in audit
+            ? { multi_request_decision: audit }
             : {}),
         },
       );
@@ -181,9 +190,16 @@ function mapConversation(
     conversationId: row.conversation_id,
     assistantMessageId: row.assistant_message_id,
     organizationId: row.organization_id,
+    ...(row.clarification_states?.length
+      ? {
+          clarificationStates: row.clarification_states,
+          clarificationState: row.clarification_states[0],
+        }
+      : {}),
     ...(row.clarification_original_text &&
       row.clarification_round &&
-      row.clarification_content
+      row.clarification_content &&
+      !row.clarification_states?.length
       ? {
           clarificationState: {
             originalText: row.clarification_original_text,

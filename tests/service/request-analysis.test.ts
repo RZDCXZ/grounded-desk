@@ -3,6 +3,9 @@ import test from "node:test";
 
 import { ProviderCallError } from "../../src/lib/ai/provider-call.ts";
 import {
+  createRequestAnalysisPrompt,
+} from "../../src/lib/ai/request-analysis-provider.ts";
+import {
   analyzeAssistantRequest,
   streamAnalyzedAssistantResponse,
   type RequestAnalysis,
@@ -25,6 +28,28 @@ const input = {
     serviceScope: "退款与发票服务",
   },
 };
+
+test("请求分析供应商收到逐诉求澄清状态以稳定延续原始诉求", () => {
+  const prompt = createRequestAnalysisPrompt({
+    ...input,
+    clarificationStates: [
+      {
+        originalText: "发票",
+        round: 1,
+        latestClarification: "请补充：发票类型。",
+      },
+      {
+        originalText: "账户",
+        round: 2,
+        latestClarification: "请补充：所属组织。",
+      },
+    ],
+  });
+
+  assert.match(prompt, /"originalText":"发票"/u);
+  assert.match(prompt, /"originalText":"账户"/u);
+  assert.match(prompt, /避免重复上一轮问题/u);
+});
 
 test("请求分析器严格返回版本化且有顺序的最多三项事实诉求", async () => {
   const logs: AiCallLog[] = [];
@@ -465,6 +490,149 @@ test("不完整事实诉求使用缺失信息形成受控澄清且不执行知�
     },
   ]);
   assert.equal(knowledgeCalls, 0);
+});
+
+test("超过三项事实诉求要求缩小范围并计入两轮澄清上限", async () => {
+  const originalText =
+    "退款多久到账？能开发票吗？支持英文吗？可以线下办理吗？";
+  const first = await analyzeAssistantRequest(
+    {
+      ...input,
+      question: originalText,
+    },
+    dependencies(
+      candidate({
+        language: "zh",
+        interactionType: "incomplete",
+        conversationalIntent: null,
+        factualRequests: [
+          {
+            originalText,
+            normalizedQuestion: originalText,
+            completeness: "incomplete",
+            missingInformation: ["请将事实诉求缩小到最多三项"],
+          },
+        ],
+      }),
+      [],
+    ),
+  );
+  const second = await analyzeAssistantRequest(
+    {
+      ...input,
+      question: originalText,
+      clarificationState: {
+        originalText,
+        round: 1,
+        latestClarification: "请补充：请将事实诉求缩小到最多三项。",
+      },
+    },
+    dependencies(
+      candidate({
+        language: "zh",
+        interactionType: "incomplete",
+        conversationalIntent: null,
+        factualRequests: [
+          {
+            originalText,
+            normalizedQuestion: originalText,
+            completeness: "incomplete",
+            missingInformation: ["请明确希望保留的最多三项事实诉求"],
+          },
+        ],
+      }),
+      [],
+    ),
+  );
+  const third = await analyzeAssistantRequest(
+    {
+      ...input,
+      question: originalText,
+      clarificationState: {
+        originalText,
+        round: 2,
+        latestClarification:
+          "请补充：请明确希望保留的最多三项事实诉求。",
+      },
+    },
+    dependencies(
+      candidate({
+        language: "zh",
+        interactionType: "incomplete",
+        conversationalIntent: null,
+        factualRequests: [
+          {
+            originalText,
+            normalizedQuestion: originalText,
+            completeness: "incomplete",
+            missingInformation: ["仍未明确保留的三项事实诉求"],
+          },
+        ],
+      }),
+      [],
+    ),
+  );
+
+  assert.equal(first.factualRequests[0]?.clarificationRound, 1);
+  assert.equal(second.factualRequests[0]?.clarificationRound, 2);
+  assert.equal(third.factualRequests[0]?.clarificationRound, 2);
+  assert.equal(third.factualRequests[0]?.requiresHumanHandoff, true);
+});
+
+test("部分回答中的多个待澄清诉求分别恢复自己的轮次", async () => {
+  const result = await analyzeAssistantRequest(
+    {
+      ...input,
+      question: "电子发票，企业账户",
+      clarificationStates: [
+        {
+          originalText: "发票",
+          round: 1,
+          latestClarification: "请补充：发票类型。",
+        },
+        {
+          originalText: "账户",
+          round: 2,
+          latestClarification: "请补充：所属组织。",
+        },
+      ],
+    },
+    dependencies(
+      candidate({
+        language: "zh",
+        interactionType: "incomplete",
+        conversationalIntent: null,
+        factualRequests: [
+          {
+            originalText: "发票",
+            normalizedQuestion: "电子发票",
+            completeness: "incomplete",
+            missingInformation: ["开票主体"],
+          },
+          {
+            originalText: "账户",
+            normalizedQuestion: "企业账户",
+            completeness: "incomplete",
+            missingInformation: ["账户标识"],
+          },
+        ],
+      }),
+      [],
+    ),
+  );
+
+  assert.deepEqual(
+    result.factualRequests.map(
+      ({ clarificationRound, requiresHumanHandoff }) => ({
+        clarificationRound,
+        requiresHumanHandoff,
+      }),
+    ),
+    [
+      { clarificationRound: 2, requiresHumanHandoff: false },
+      { clarificationRound: 2, requiresHumanHandoff: true },
+    ],
+  );
 });
 
 test("连续不完整诉求的第二轮使用新增上下文并推进澄清轮次", async () => {

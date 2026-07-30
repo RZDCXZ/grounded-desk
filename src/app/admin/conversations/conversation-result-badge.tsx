@@ -4,6 +4,7 @@ import {
   CircleHelp,
   Clock3,
   GitCompare,
+  ListChecks,
   MessageCircle,
   ServerCrash,
   UserCheck,
@@ -31,6 +32,12 @@ const resultPresentations: Record<
     className: "border-success/20 bg-success-light text-success",
     icon: CheckCircle2,
     label: "有据回答",
+  },
+  partially_grounded_answer: {
+    className:
+      "border-warning/30 bg-success-light text-forest-800",
+    icon: ListChecks,
+    label: "部分有据回答",
   },
   knowledge_conflict: {
     className: "border-warning/20 bg-warning-light text-warning",

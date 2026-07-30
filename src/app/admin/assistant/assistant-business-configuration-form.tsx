@@ -26,6 +26,7 @@ import { StatusBadge, type Status } from "@/components/admin/status-badge";
 import { CitationList } from "@/components/assistant/citation-list";
 import { ConflictSourceList } from "@/components/assistant/conflict-source-list";
 import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
+import { ResponseSectionList } from "@/components/assistant/response-section-list";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -48,7 +49,10 @@ import type {
   GroundedCitation,
 } from "@/lib/assistant/grounded-answer";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
-import { reduceAssistantResponsePresentation } from "@/lib/assistant/response-sections";
+import {
+  reduceAssistantResponsePresentation,
+  type ResponseSection,
+} from "@/lib/assistant/response-sections";
 import type {
   ClarificationThreadState,
 } from "@/lib/assistant/response-decision-audit";
@@ -70,6 +74,7 @@ type PreviewResultBase = {
   question: string;
   answer: string;
   citations: GroundedCitation[];
+  sections?: ResponseSection[];
   message?: string;
   failureReason?: "input_rejected" | "rate_limited" | "provider_failure";
   contact?: {
@@ -605,9 +610,9 @@ function AssistantPreview({
     ConversationContextMessage[]
   >([]);
   const [
-    previewClarificationState,
-    setPreviewClarificationState,
-  ] = useState<ClarificationThreadState>();
+    previewClarificationStates,
+    setPreviewClarificationStates,
+  ] = useState<ClarificationThreadState[]>([]);
   const requestController = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -629,9 +634,7 @@ function AssistantPreview({
     const controller = new AbortController();
     let completedContent = "";
     let completedResultType: ConversationResultType | undefined;
-    let completedClarificationState:
-      | ClarificationThreadState
-      | undefined;
+    let completedClarificationStates: ClarificationThreadState[] = [];
     let messageCompleted = false;
     requestController.current?.abort();
     requestController.current = controller;
@@ -651,7 +654,7 @@ function AssistantPreview({
         body: JSON.stringify({
           question: normalizedQuestion,
           context: previewContext,
-          clarificationState: previewClarificationState,
+          clarificationStates: previewClarificationStates,
         }),
         signal: controller.signal,
       });
@@ -680,8 +683,15 @@ function AssistantPreview({
         } else if (streamEvent.type === "message_complete") {
           messageCompleted = true;
           completedResultType = streamEvent.resultType;
-          completedClarificationState =
-            streamEvent.clarificationState;
+          completedContent = streamEvent.sections
+            .sort((left, right) => left.order - right.order)
+            .map(({ content }) => content)
+            .join("\n\n");
+          completedClarificationStates =
+            streamEvent.clarificationStates ??
+            (streamEvent.clarificationState
+              ? [streamEvent.clarificationState]
+              : []);
         }
 
         setResult((current) => {
@@ -716,7 +726,7 @@ function AssistantPreview({
         );
       }
       if (messageCompleted) {
-        setPreviewClarificationState(completedClarificationState);
+        setPreviewClarificationStates(completedClarificationStates);
       }
     } catch (error) {
       if (controller.signal.aborted) {
@@ -901,20 +911,37 @@ function AssistantPreview({
                     </>
                   ) : (
                     <>
-                      <div className="text-sm leading-6">
-                        <ControlledMarkdown>{result.answer}</ControlledMarkdown>
-                        {result.status === "streaming" ? (
-                          <Spinner
-                            className="ml-1 inline size-3 align-text-bottom text-forest-800"
-                            label="正在生成回答"
-                          />
-                        ) : null}
-                      </div>
+                      {result.sections ? (
+                        <>
+                          <ResponseSectionList sections={result.sections} />
+                          {result.status === "streaming" && result.answer ? (
+                            <div className="mt-4 text-sm leading-6">
+                              <ControlledMarkdown>{result.answer}</ControlledMarkdown>
+                              <Spinner
+                                className="ml-1 inline size-3 align-text-bottom text-forest-800"
+                                label="正在生成回答"
+                              />
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm leading-6">
+                            <ControlledMarkdown>{result.answer}</ControlledMarkdown>
+                            {result.status === "streaming" ? (
+                              <Spinner
+                                className="ml-1 inline size-3 align-text-bottom text-forest-800"
+                                label="正在生成回答"
+                              />
+                            ) : null}
+                          </div>
 
-                      {result.status === "complete" &&
-                      result.resultType === "grounded_answer" ? (
-                        <CitationList citations={result.citations} />
-                      ) : null}
+                          {result.status === "complete" &&
+                          result.resultType === "grounded_answer" ? (
+                            <CitationList citations={result.citations} />
+                          ) : null}
+                        </>
+                      )}
                     </>
                   )}
                 </div>

@@ -17,5 +17,9 @@ export function selectCompletionProcedure(
       : "complete_public_single_request_decision";
   }
 
+  if ("requests" in audit) {
+    return "complete_public_multi_request_decision";
+  }
+
   return "complete_public_clarification_decision";
 }

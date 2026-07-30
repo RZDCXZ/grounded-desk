@@ -1,5 +1,6 @@
 export type ConversationResultType =
   | "grounded_answer"
+  | "partially_grounded_answer"
   | "grounded_refusal"
   | "knowledge_conflict"
   | "conversational_response"
