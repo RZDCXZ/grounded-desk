@@ -99,6 +99,22 @@ select isnt(
   'first publication creates a public identifier'
 );
 
+insert into public.knowledge_sources (
+  id,
+  organization_id,
+  title,
+  source_type,
+  status,
+  original_url
+) values (
+  '00000000-0000-4000-8000-000000000701',
+  '00000000-0000-4000-8000-000000000101',
+  '服务说明',
+  'manual',
+  'available',
+  'https://example.com/services'
+);
+
 create temporary table first_publication as
 select public_id
 from public.assistants;

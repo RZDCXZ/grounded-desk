@@ -105,6 +105,12 @@ pnpm eval:retrieval -- --json
 
 `SUPABASE_SECRET_KEY` 可以从 `pnpm exec supabase status` 的本地输出复制到 `.env.local`。当前管理员入口本身不需要该特权密钥；它预留给仅在服务端运行的后续管理流程。
 
+## 数据保留
+
+- 访客会话及其消息、引用、质量反馈和关联待解决问题从最后活动时间起保留 30 天，随后通过外键级联删除。
+- 不含提示词、回答正文、API Key 或 IP 画像的模型调用日志同样保留 30 天。
+- 数据库迁移会启用 `pg_cron`，并注册 `grounded-desk-daily-retention` 任务，每天 UTC 03:15 执行清理。部署后应确认该任务处于启用状态，并监控 `cron.job_run_details` 中的失败记录。
+
 ## 数据库约束
 
 - `organizations` 是业务隔离边界。
