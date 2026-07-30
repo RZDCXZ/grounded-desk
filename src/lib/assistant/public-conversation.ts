@@ -10,6 +10,11 @@ import type {
   GroundedCitation,
 } from "./grounded-answer.ts";
 import { detectQuestionLanguage } from "./question-language.ts";
+import {
+  streamSingleSectionResponse,
+  type ResponseSection,
+  type SectionedAssistantResponseEvent,
+} from "./response-sections.ts";
 
 const MAXIMUM_QUESTION_LENGTH = 2_000;
 
@@ -66,6 +71,7 @@ type PublicConversationDependencies = {
   completeConversation(
     start: PublicConversationStart,
     outcome: PublicConversationOutcome,
+    sections: ResponseSection[],
   ): Promise<void>;
   failConversation(start: PublicConversationStart): Promise<void>;
 };
@@ -122,9 +128,13 @@ export async function createPublicConversationResponse(
         question: questionResult.question,
       }),
   });
+  const sectionEvents = streamSingleSectionResponse(
+    events,
+    crypto.randomUUID(),
+  );
   const response = createAssistantPreviewResponse(
     persistConversationOutcome(
-      events,
+      sectionEvents,
       conversation,
       dependencies,
     ),
@@ -202,28 +212,24 @@ function createBlockedResponse(
 }
 
 async function* persistConversationOutcome(
-  events: AsyncIterable<AssistantResponseEvent>,
+  events: AsyncIterable<SectionedAssistantResponseEvent>,
   conversation: PublicConversationStart,
   dependencies: PublicConversationDependencies,
 ) {
-  let answer = "";
-
   try {
     for await (const event of events) {
-      if (event.type === "text_delta") {
-        answer += event.delta;
-      } else if (event.type === "complete") {
+      if (event.type === "message_complete") {
+        const content = event.sections
+          .map((section) => section.content)
+          .join("\n\n");
+        const citations = event.sections.flatMap(
+          (section) => section.citations,
+        );
         await dependencies.completeConversation(conversation, {
           type: event.resultType,
-          content: answer,
-          citations: event.citations,
-        });
-      } else {
-        await dependencies.completeConversation(conversation, {
-          type: event.resultType,
-          content: event.message,
-          citations: [],
-        });
+          content,
+          citations,
+        }, event.sections);
       }
 
       yield event;

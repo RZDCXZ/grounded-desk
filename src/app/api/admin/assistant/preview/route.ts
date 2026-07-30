@@ -4,6 +4,7 @@ import {
   streamRoutedAssistantResponse,
 } from "@/lib/assistant/conversational-response";
 import { createAssistantPreviewResponse } from "@/lib/assistant/preview-response";
+import { streamSingleSectionResponse } from "@/lib/assistant/response-sections";
 import { createSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
 import { requireAdministrator } from "@/lib/auth/require-admin";
 
@@ -45,20 +46,23 @@ export async function POST(request: Request) {
   const question = questionResult.question;
 
   return createAssistantPreviewResponse(
-    streamRoutedAssistantResponse({
-      question,
-      route: routeConversationInput(question),
-      assistant: assistantConfiguration,
-      streamKnowledgeAnswer: () =>
-        streamGroundedAnswer(
-          {
-            organizationId: organization.id,
-            question,
-            assistant: assistantConfiguration,
-          },
-          createSupabaseGroundedAnswerDependencies(supabase),
-        ),
-    }),
+    streamSingleSectionResponse(
+      streamRoutedAssistantResponse({
+        question,
+        route: routeConversationInput(question),
+        assistant: assistantConfiguration,
+        streamKnowledgeAnswer: () =>
+          streamGroundedAnswer(
+            {
+              organizationId: organization.id,
+              question,
+              assistant: assistantConfiguration,
+            },
+            createSupabaseGroundedAnswerDependencies(supabase),
+          ),
+      }),
+      crypto.randomUUID(),
+    ),
     {
       label: assistant.human_contact_label,
       url: assistant.human_contact_url,

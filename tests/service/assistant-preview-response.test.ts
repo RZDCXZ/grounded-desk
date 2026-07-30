@@ -10,34 +10,38 @@ import {
   streamRoutedAssistantResponse,
 } from "../../src/lib/assistant/conversational-response.ts";
 import { createAssistantPreviewResponse } from "../../src/lib/assistant/preview-response.ts";
+import { streamSingleSectionResponse } from "../../src/lib/assistant/response-sections.ts";
 
 test("预览 HTTP 流对高置信交流输入使用受控回应且不调用知识回答", async () => {
   let knowledgeCalls = 0;
   const question = "Hello!";
   const response = createAssistantPreviewResponse(
-    streamRoutedAssistantResponse({
-      question,
-      route: routeConversationInput(question),
-      assistant: {
-        name: "Demo Advisor",
-        serviceScope: "account services",
-        tone: "professional",
-      },
-      streamKnowledgeAnswer: () => {
-        knowledgeCalls += 1;
-        return (async function* () {
-          yield {
-            type: "refusal" as const,
-            resultType: "grounded_refusal" as const,
-            message: "This knowledge path must not run.",
-            contact: {
-              label: "Contact us",
-              url: "https://example.com/contact",
-            },
-          };
-        })();
-      },
-    }),
+    streamSingleSectionResponse(
+      streamRoutedAssistantResponse({
+        question,
+        route: routeConversationInput(question),
+        assistant: {
+          name: "Demo Advisor",
+          serviceScope: "account services",
+          tone: "professional",
+        },
+        streamKnowledgeAnswer: () => {
+          knowledgeCalls += 1;
+          return (async function* () {
+            yield {
+              type: "refusal" as const,
+              resultType: "grounded_refusal" as const,
+              message: "This knowledge path must not run.",
+              contact: {
+                label: "Contact us",
+                url: "https://example.com/contact",
+              },
+            };
+          })();
+        },
+      }),
+      "00000000-0000-4000-8000-000000001801",
+    ),
     {
       label: "Contact us",
       url: "https://example.com/contact",
@@ -48,14 +52,43 @@ test("预览 HTTP 流对高置信交流输入使用受控回应且不调用知�
   assert.equal(knowledgeCalls, 0);
   assert.deepEqual(await readNdjson(response), [
     {
-      type: "text_delta",
+      type: "section_start",
+      section: {
+        id: "00000000-0000-4000-8000-000000001801",
+        order: 1,
+        status: "streaming",
+      },
+    },
+    {
+      type: "section_delta",
+      sectionId: "00000000-0000-4000-8000-000000001801",
       delta:
         "Hello, I'm Demo Advisor. You can ask me about account services.",
     },
     {
-      type: "complete",
+      type: "section_complete",
+      section: {
+        id: "00000000-0000-4000-8000-000000001801",
+        order: 1,
+        status: "conversational",
+        content:
+          "Hello, I'm Demo Advisor. You can ask me about account services.",
+        citations: [],
+      },
+    },
+    {
+      type: "message_complete",
       resultType: "conversational_response",
-      citations: [],
+      sections: [
+        {
+          id: "00000000-0000-4000-8000-000000001801",
+          order: 1,
+          status: "conversational",
+          content:
+            "Hello, I'm Demo Advisor. You can ask me about account services.",
+          citations: [],
+        },
+      ],
     },
   ]);
   assert.equal(knowledgeCalls, 0);
@@ -72,59 +105,62 @@ test("预览 HTTP 流在知识检索无证据时展示普通澄清提问", async
   };
   const providerCalls: string[] = [];
   const response = createAssistantPreviewResponse(
-    streamRoutedAssistantResponse({
-      question,
-      route: routeConversationInput(question),
-      assistant,
-      streamKnowledgeAnswer: () =>
-        streamGroundedAnswer(
-          {
-            organizationId: "organization-1",
-            question,
-            assistant,
-          },
-          {
-            questionEmbeddingProvider: {
-              provider: "test",
-              model: "embedding",
-              async embed() {
-                providerCalls.push("embedding");
-                return previewProviderResult(
-                  [0.1, 0.2],
-                  "embedding-trace",
-                );
+    streamSingleSectionResponse(
+      streamRoutedAssistantResponse({
+        question,
+        route: routeConversationInput(question),
+        assistant,
+        streamKnowledgeAnswer: () =>
+          streamGroundedAnswer(
+            {
+              organizationId: "organization-1",
+              question,
+              assistant,
+            },
+            {
+              questionEmbeddingProvider: {
+                provider: "test",
+                model: "embedding",
+                async embed() {
+                  providerCalls.push("embedding");
+                  return previewProviderResult(
+                    [0.1, 0.2],
+                    "embedding-trace",
+                  );
+                },
+              },
+              candidateRepository: {
+                async retrieve() {
+                  return [];
+                },
+              },
+              rerankingProvider: {
+                provider: "test",
+                model: "rerank",
+                async rerank() {
+                  assert.fail("无候选证据时不应重排");
+                },
+              },
+              answerProvider: {
+                provider: "test",
+                model: "answer",
+                streamAnswer() {
+                  assert.fail("澄清提问不应调用回答模型");
+                },
+              },
+              callLogger: {
+                async record() {},
+              },
+              config: {
+                candidateLimit: 20,
+                evidenceLimit: 5,
+                evidenceThreshold: 0.85,
               },
             },
-            candidateRepository: {
-              async retrieve() {
-                return [];
-              },
-            },
-            rerankingProvider: {
-              provider: "test",
-              model: "rerank",
-              async rerank() {
-                assert.fail("无候选证据时不应重排");
-              },
-            },
-            answerProvider: {
-              provider: "test",
-              model: "answer",
-              streamAnswer() {
-                assert.fail("澄清提问不应调用回答模型");
-              },
-            },
-            callLogger: {
-              async record() {},
-            },
-            config: {
-              candidateLimit: 20,
-              evidenceLimit: 5,
-              evidenceThreshold: 0.85,
-            },
-          },
-        ),
-    }),
+          ),
+      }),
+      "00000000-0000-4000-8000-000000001802",
+    ),
     {
       label: assistant.humanContactLabel,
       url: assistant.humanContactUrl,
@@ -133,13 +169,40 @@ test("预览 HTTP 流在知识检索无证据时展示普通澄清提问", async
 
   assert.deepEqual(await readNdjson(response), [
     {
-      type: "text_delta",
+      type: "section_start",
+      section: {
+        id: "00000000-0000-4000-8000-000000001802",
+        order: 1,
+        status: "streaming",
+      },
+    },
+    {
+      type: "section_delta",
+      sectionId: "00000000-0000-4000-8000-000000001802",
       delta: "您想了解“退款”的哪一方面？请补充具体问题。",
     },
     {
-      type: "complete",
+      type: "section_complete",
+      section: {
+        id: "00000000-0000-4000-8000-000000001802",
+        order: 1,
+        status: "clarification",
+        content: "您想了解“退款”的哪一方面？请补充具体问题。",
+        citations: [],
+      },
+    },
+    {
+      type: "message_complete",
       resultType: "clarification_request",
-      citations: [],
+      sections: [
+        {
+          id: "00000000-0000-4000-8000-000000001802",
+          order: 1,
+          status: "clarification",
+          content: "您想了解“退款”的哪一方面？请补充具体问题。",
+          citations: [],
+        },
+      ],
     },
   ]);
   assert.deepEqual(providerCalls, ["embedding"]);

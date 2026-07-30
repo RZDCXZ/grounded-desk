@@ -90,15 +90,14 @@ export async function POST(
         ),
       );
     },
-    async completeConversation(conversation, outcome) {
+    async completeConversation(conversation, outcome, sections) {
       const { error } = await supabase.rpc(
-        "complete_public_conversation",
+        "complete_public_conversation_sections",
         {
           assistant_public_id: publicId,
           target_conversation_id: conversation.conversationId,
           result_type: outcome.type,
-          result_content: outcome.content,
-          result_citations: outcome.citations,
+          result_sections: sections,
         },
       );
 

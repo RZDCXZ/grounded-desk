@@ -39,11 +39,10 @@ import {
   type AssistantBusinessConfigurationValues,
   type AssistantTone,
 } from "@/lib/assistant/business-configuration";
-import type {
-  AssistantResponseEvent,
-  GroundedCitation,
-} from "@/lib/assistant/grounded-answer";
+import type { ConversationResultType } from "@/lib/assistant/conversation-result";
+import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
+import { reduceAssistantResponsePresentation } from "@/lib/assistant/response-sections";
 import { cn } from "@/lib/utils";
 
 import {
@@ -56,10 +55,7 @@ const initialActionState: AssistantBusinessConfigurationActionState = {
   status: "idle",
 };
 
-type CompletedResultType = Extract<
-  AssistantResponseEvent,
-  { type: "complete" }
->["resultType"];
+type CompletedResultType = ConversationResultType;
 
 type PreviewResultBase = {
   question: string;
@@ -636,41 +632,30 @@ function AssistantPreview({
       }
 
       await consumeAssistantResponseStream(response.body, (streamEvent) => {
-        if (streamEvent.type === "text_delta") {
-          setResult((current) => ({
-            ...current,
-            answer: current.answer + streamEvent.delta,
-          }));
-          return;
-        }
-
-        if (streamEvent.type === "complete") {
-          setResult((current) => ({
-            ...current,
-            status: "complete",
-            citations: streamEvent.citations,
-            resultType: streamEvent.resultType,
-          }));
-          return;
-        }
-
-        if (streamEvent.type === "refusal") {
+        if (streamEvent.type === "temporary_failure") {
           setResult((current) => ({
             ...withoutPreviewResultType(current),
-            status: "refusal",
+            status: "temporary_failure",
+            failureReason: streamEvent.reason,
             message: streamEvent.message,
             contact: streamEvent.contact,
           }));
           return;
         }
 
-        setResult((current) => ({
-          ...withoutPreviewResultType(current),
-          status: "temporary_failure",
-          failureReason: streamEvent.reason,
-          message: streamEvent.message,
-          contact: streamEvent.contact,
-        }));
+        setResult((current) => {
+          const presentation = reduceAssistantResponsePresentation(
+            current,
+            streamEvent,
+          );
+
+          return presentation
+            ? {
+                ...withoutPreviewResultType(current),
+                ...presentation,
+              }
+            : current;
+        });
       });
     } catch (error) {
       if (controller.signal.aborted) {

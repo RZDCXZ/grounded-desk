@@ -17,21 +17,17 @@ import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import type {
-  AssistantResponseEvent,
-  GroundedCitation,
-} from "@/lib/assistant/grounded-answer";
+import type { ConversationResultType } from "@/lib/assistant/conversation-result";
+import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
 import type { PublicConversationBlockReason } from "@/lib/assistant/public-conversation";
 import type { QualityFeedbackValue } from "@/lib/assistant/quality-feedback";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
+import { reduceAssistantResponsePresentation } from "@/lib/assistant/response-sections";
 import { cn } from "@/lib/utils";
 
 import type { PublicAssistant } from "./page";
 
-type CompletedResultType = Extract<
-  AssistantResponseEvent,
-  { type: "complete" }
->["resultType"];
+type CompletedResultType = ConversationResultType;
 
 type ConversationResultBase = {
   id: string;
@@ -211,41 +207,30 @@ export function PublicConversation({
       }
 
       await consumeAssistantResponseStream(response.body, (streamEvent) => {
-        if (streamEvent.type === "text_delta") {
-          updateResult(resultId, (current) => ({
-            ...current,
-            answer: current.answer + streamEvent.delta,
-          }));
-          return;
-        }
-
-        if (streamEvent.type === "complete") {
-          updateResult(resultId, (current) => ({
-            ...current,
-            status: "complete",
-            citations: streamEvent.citations,
-            resultType: streamEvent.resultType,
-          }));
-          return;
-        }
-
-        if (streamEvent.type === "refusal") {
+        if (streamEvent.type === "temporary_failure") {
           updateResult(resultId, (current) => ({
             ...withoutCompletionResultType(current),
-            status: "refusal",
+            status: "temporary_failure",
             message: streamEvent.message,
             contact: streamEvent.contact,
+            retryFailedAnswer: true,
           }));
           return;
         }
 
-        updateResult(resultId, (current) => ({
-          ...withoutCompletionResultType(current),
-          status: "temporary_failure",
-          message: streamEvent.message,
-          contact: streamEvent.contact,
-          retryFailedAnswer: true,
-        }));
+        updateResult(resultId, (current) => {
+          const presentation = reduceAssistantResponsePresentation(
+            current,
+            streamEvent,
+          );
+
+          return presentation
+            ? {
+                ...withoutCompletionResultType(current),
+                ...presentation,
+              }
+            : current;
+        });
       });
     } catch (error) {
       if (controller.signal.aborted) {

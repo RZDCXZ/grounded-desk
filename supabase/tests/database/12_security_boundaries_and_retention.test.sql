@@ -452,6 +452,7 @@ select results_eq(
         'get_published_assistant',
         'begin_public_conversation',
         'complete_public_conversation',
+        'complete_public_conversation_sections',
         'fail_public_conversation',
         'retrieve_public_assistant_content_units',
         'record_public_assistant_ai_call',

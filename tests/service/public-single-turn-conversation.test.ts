@@ -11,6 +11,7 @@ import {
   type AssistantResponseEvent,
   type ConversationContextMessage,
 } from "../../src/lib/assistant/grounded-answer.ts";
+import type { ResponseSection } from "../../src/lib/assistant/response-sections.ts";
 
 const publicId = "00000000-0000-4000-8000-000000000301";
 const conversationId = "00000000-0000-4000-8000-000000000401";
@@ -23,6 +24,7 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
   }> = [];
   const answerInputs: PublicConversationStart[] = [];
   const outcomes: PublicConversationOutcome[] = [];
+  const completedSections: ResponseSection[][] = [];
   const response = await createPublicConversationResponse(
     new Request("http://localhost/api/public/assistants/id/messages", {
       method: "POST",
@@ -65,8 +67,9 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
           },
         ]);
       },
-      async completeConversation(_start, outcome) {
+      async completeConversation(_start, outcome, sections) {
         outcomes.push(outcome);
+        completedSections.push(sections);
       },
       async failConversation() {
         assert.fail("成功回答不应记录为技术故障");
@@ -96,7 +99,31 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
       question: "你们提供什么服务？",
     },
   ]);
-  assert.deepEqual(await readNdjson(response), [
+  const rawEvents = await readRawNdjson(response);
+  const sectionId = (
+    rawEvents.find(({ type }) => type === "section_start") as {
+      section: { id: string };
+    }
+  ).section.id;
+  assert.match(sectionId, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(
+    rawEvents.map(({ type }) => type),
+    [
+      "section_start",
+      "section_delta",
+      "section_complete",
+      "message_complete",
+    ],
+  );
+  assert.equal(
+    (
+      rawEvents.find(({ type }) => type === "section_delta") as {
+        sectionId: string;
+      }
+    ).sectionId,
+    sectionId,
+  );
+  assert.deepEqual(normalizeSectionEvents(rawEvents), [
     { type: "text_delta", delta: "我们提供知识整理服务。" },
     {
       type: "complete",
@@ -122,6 +149,23 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
         },
       ],
     },
+  ]);
+  assert.deepEqual(completedSections, [
+    [
+      {
+        id: sectionId,
+        order: 1,
+        status: "supported",
+        content: "我们提供知识整理服务。",
+        citations: [
+          {
+            knowledgeSourceId: "source-1",
+            title: "服务说明",
+            url: "https://example.com/services",
+          },
+        ],
+      },
+    ],
   ]);
 });
 
@@ -1245,9 +1289,52 @@ async function* answerEvents(events: AssistantResponseEvent[]) {
 }
 
 async function readNdjson(response: Response) {
+  return normalizeSectionEvents(await readRawNdjson(response));
+}
+
+async function readRawNdjson(response: Response) {
   return (await response.text())
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as unknown);
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function normalizeSectionEvents(
+  events: Array<Record<string, unknown>>,
+) {
+  return events.flatMap((event) => {
+    if (event.type === "section_delta") {
+      return [{
+        type: "text_delta",
+        delta: event.delta,
+      }];
+    }
+
+    if (event.type !== "message_complete") {
+      return event.type === "temporary_failure" ? [event] : [];
+    }
+
+    const sections = event.sections as Array<{
+      content: string;
+      citations: unknown[];
+      contact?: unknown;
+    }>;
+    const section = sections[0];
+
+    if (event.resultType === "grounded_refusal") {
+      return [{
+        type: "refusal",
+        resultType: event.resultType,
+        message: section?.content,
+        contact: section?.contact,
+      }];
+    }
+
+    return [{
+      type: "complete",
+      resultType: event.resultType,
+      citations: section?.citations ?? [],
+    }];
+  });
 }

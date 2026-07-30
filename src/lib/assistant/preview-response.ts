@@ -1,6 +1,8 @@
 import { ProviderCallError } from "../ai/provider-call.ts";
-import type { AssistantResponseEvent } from "./grounded-answer.ts";
 import type { QuestionLanguage } from "./question-language.ts";
+import type {
+  SectionedAssistantResponseEvent,
+} from "./response-sections.ts";
 
 type PreviewContact = {
   label: string;
@@ -8,7 +10,7 @@ type PreviewContact = {
 };
 
 export function createAssistantPreviewResponse(
-  events: AsyncIterable<AssistantResponseEvent>,
+  events: AsyncIterable<SectionedAssistantResponseEvent>,
   contact: PreviewContact,
   language: QuestionLanguage = "zh",
 ) {
