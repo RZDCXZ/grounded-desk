@@ -7,6 +7,10 @@ export function CitationList({
 }: {
   citations: GroundedCitation[];
 }) {
+  if (citations.length === 0) {
+    return null;
+  }
+
   return (
     <div className="mt-4 border-t border-line pt-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
       <div className="mb-2 flex items-center justify-between gap-3">

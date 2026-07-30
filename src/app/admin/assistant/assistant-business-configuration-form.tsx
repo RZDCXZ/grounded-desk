@@ -39,7 +39,10 @@ import {
   type AssistantBusinessConfigurationValues,
   type AssistantTone,
 } from "@/lib/assistant/business-configuration";
-import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
+import type {
+  AssistantResponseEvent,
+  GroundedCitation,
+} from "@/lib/assistant/grounded-answer";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
 import { cn } from "@/lib/utils";
 
@@ -53,13 +56,12 @@ const initialActionState: AssistantBusinessConfigurationActionState = {
   status: "idle",
 };
 
-type PreviewResult = {
-  status:
-    | "idle"
-    | "streaming"
-    | "complete"
-    | "refusal"
-    | "temporary_failure";
+type CompletedResultType = Extract<
+  AssistantResponseEvent,
+  { type: "complete" }
+>["resultType"];
+
+type PreviewResultBase = {
   question: string;
   answer: string;
   citations: GroundedCitation[];
@@ -70,6 +72,26 @@ type PreviewResult = {
     url: string;
   };
 };
+
+type PreviewResult = PreviewResultBase &
+  (
+    | {
+        status: "complete";
+        resultType: CompletedResultType;
+      }
+    | {
+        status: "idle" | "streaming" | "refusal" | "temporary_failure";
+        resultType?: never;
+      }
+  );
+
+function withoutPreviewResultType(
+  result: PreviewResult,
+): PreviewResultBase {
+  const { resultType: _resultType, ...base } = result;
+  void _resultType;
+  return base;
+}
 
 type CopyStatusState = {
   result: "copied" | "failed";
@@ -627,13 +649,14 @@ function AssistantPreview({
             ...current,
             status: "complete",
             citations: streamEvent.citations,
+            resultType: streamEvent.resultType,
           }));
           return;
         }
 
         if (streamEvent.type === "refusal") {
           setResult((current) => ({
-            ...current,
+            ...withoutPreviewResultType(current),
             status: "refusal",
             message: streamEvent.message,
             contact: streamEvent.contact,
@@ -642,7 +665,7 @@ function AssistantPreview({
         }
 
         setResult((current) => ({
-          ...current,
+          ...withoutPreviewResultType(current),
           status: "temporary_failure",
           failureReason: streamEvent.reason,
           message: streamEvent.message,
@@ -655,7 +678,7 @@ function AssistantPreview({
       }
 
       setResult((current) => ({
-        ...current,
+        ...withoutPreviewResultType(current),
         status: "temporary_failure",
         failureReason: "provider_failure",
         message:
@@ -807,7 +830,8 @@ function AssistantPreview({
                         ) : null}
                       </div>
 
-                      {result.status === "complete" ? (
+                      {result.status === "complete" &&
+                      result.resultType === "grounded_answer" ? (
                         <CitationList citations={result.citations} />
                       ) : null}
                     </>

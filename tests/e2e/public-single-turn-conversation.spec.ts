@@ -147,6 +147,122 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await expect(page.getByLabel("邮箱")).toHaveCount(0);
   await expect(page.getByLabel("电话")).toHaveCount(0);
 
+  const publicMessagesPattern =
+    `**/api/public/assistants/${publicPath.split("/").at(-1)}/messages`;
+  const ordinaryResponses = [
+    {
+      answer: "您好，我是演示业务顾问。您可以咨询演示业务范围。",
+      resultType: "conversational_response",
+    },
+    {
+      answer: "您想了解“退款”的哪一方面？请补充具体问题。",
+      resultType: "clarification_request",
+    },
+    {
+      answer:
+        "Hello, I’m Demo Business Advisor. You can ask about demo services.",
+      resultType: "conversational_response",
+    },
+    {
+      answer: "关于“退款 pricing”，您想了解哪一方面？请补充具体问题。",
+      resultType: "clarification_request",
+    },
+  ] as const;
+  let ordinaryMessageRequests = 0;
+  await page.route(publicMessagesPattern, async (route) => {
+    ordinaryMessageRequests += 1;
+    const response =
+      ordinaryResponses[ordinaryMessageRequests - 1] ??
+      ordinaryResponses.at(-1)!;
+    await route.fulfill({
+      body: [
+        JSON.stringify({
+          type: "text_delta",
+          delta: response.answer,
+        }),
+        JSON.stringify({
+          type: "complete",
+          resultType: response.resultType,
+          citations: [],
+        }),
+        "",
+      ].join("\n"),
+      contentType: "application/x-ndjson; charset=utf-8",
+      headers: {
+        "x-assistant-message-id":
+          `00000000-0000-4000-8000-00000000050${ordinaryMessageRequests}`,
+        "x-conversation-id":
+          "00000000-0000-4000-8000-000000000401",
+      },
+      status: 200,
+    });
+  });
+  await page.getByLabel("咨询问题").fill("你好");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(
+      "您好，我是演示业务顾问。您可以咨询演示业务范围。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.getByLabel("咨询问题").fill("退款");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(
+      "您想了解“退款”的哪一方面？请补充具体问题。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("回答依据", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: "评价这条助手回答" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "联系业务团队" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("现有知识暂时无法确认", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(/conversational_response|clarification_request/),
+  ).toHaveCount(0);
+  await page.getByLabel("咨询问题").fill("Hello");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(
+      "Hello, I’m Demo Business Advisor. You can ask about demo services.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.getByLabel("咨询问题").fill("退款 pricing");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(
+      "关于“退款 pricing”，您想了解哪一方面？请补充具体问题。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("回答依据", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "联系业务团队" }),
+  ).toHaveCount(0);
+  await page.setViewportSize({ height: 800, width: 360 });
+  await expect(
+    page.getByText(
+      "您想了解“退款”的哪一方面？请补充具体问题。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByLabel("咨询问题")).toBeVisible();
+  await expect(page.getByRole("button", { name: "发送问题" })).toBeVisible();
+  await page.setViewportSize({ height: 720, width: 1_280 });
+  await page.unroute(publicMessagesPattern);
+  await page.reload();
+
   const publicMessageRequests: Array<{
     question: string;
     conversationId?: string;
@@ -419,6 +535,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
                 }),
                 JSON.stringify({
                   type: "complete",
+                  resultType: "grounded_answer",
                   citations: [],
                 }),
                 "",
@@ -497,6 +614,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
                 }),
                 JSON.stringify({
                   type: "complete",
+                  resultType: "grounded_answer",
                   citations: [],
                 }),
                 "",
@@ -577,6 +695,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
       await route.fulfill({
         body: `${JSON.stringify({
           type: "refusal",
+          resultType: "grounded_refusal",
           message: "当前可用知识不足以支持这个问题的事实性回答。",
           contact: {
             label: "联系业务团队",

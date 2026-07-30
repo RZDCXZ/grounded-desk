@@ -17,7 +17,10 @@ import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
+import type {
+  AssistantResponseEvent,
+  GroundedCitation,
+} from "@/lib/assistant/grounded-answer";
 import type { PublicConversationBlockReason } from "@/lib/assistant/public-conversation";
 import type { QualityFeedbackValue } from "@/lib/assistant/quality-feedback";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
@@ -25,14 +28,13 @@ import { cn } from "@/lib/utils";
 
 import type { PublicAssistant } from "./page";
 
-type ConversationResult = {
+type CompletedResultType = Extract<
+  AssistantResponseEvent,
+  { type: "complete" }
+>["resultType"];
+
+type ConversationResultBase = {
   id: string;
-  status:
-    | "streaming"
-    | "complete"
-    | "refusal"
-    | "temporary_failure"
-    | "limit";
   question: string;
   answer: string;
   citations: GroundedCitation[];
@@ -48,6 +50,30 @@ type ConversationResult = {
     url: string;
   };
 };
+
+type ConversationResult = ConversationResultBase &
+  (
+    | {
+        status: "complete";
+        resultType: CompletedResultType;
+      }
+    | {
+        status:
+          | "streaming"
+          | "refusal"
+          | "temporary_failure"
+          | "limit";
+        resultType?: never;
+      }
+  );
+
+function withoutCompletionResultType(
+  result: ConversationResult,
+): ConversationResultBase {
+  const { resultType: _resultType, ...base } = result;
+  void _resultType;
+  return base;
+}
 
 export function PublicConversation({
   assistant,
@@ -160,7 +186,7 @@ export function PublicConversation({
           setConversationId(payload.conversationId);
         }
         updateResult(resultId, (current) => ({
-          ...current,
+          ...withoutCompletionResultType(current),
           status:
             payload?.code === "daily_budget" ||
             payload?.canStartNewConversation
@@ -198,13 +224,14 @@ export function PublicConversation({
             ...current,
             status: "complete",
             citations: streamEvent.citations,
+            resultType: streamEvent.resultType,
           }));
           return;
         }
 
         if (streamEvent.type === "refusal") {
           updateResult(resultId, (current) => ({
-            ...current,
+            ...withoutCompletionResultType(current),
             status: "refusal",
             message: streamEvent.message,
             contact: streamEvent.contact,
@@ -213,7 +240,7 @@ export function PublicConversation({
         }
 
         updateResult(resultId, (current) => ({
-          ...current,
+          ...withoutCompletionResultType(current),
           status: "temporary_failure",
           message: streamEvent.message,
           contact: streamEvent.contact,
@@ -226,7 +253,7 @@ export function PublicConversation({
       }
 
       updateResult(resultId, (current) => ({
-        ...current,
+        ...withoutCompletionResultType(current),
         status: "temporary_failure",
         message:
           error instanceof Error
@@ -564,12 +591,14 @@ function AssistantResponse({
                 />
               ) : null}
             </div>
-            {result.status === "complete" ? (
+            {result.status === "complete" &&
+            result.resultType === "grounded_answer" ? (
               <CitationList citations={result.citations} />
             ) : null}
           </>
         )}
-        {(result.status === "complete" ||
+        {((result.status === "complete" &&
+          result.resultType === "grounded_answer") ||
           result.status === "refusal") &&
         result.messageId ? (
           <QualityFeedbackControls

@@ -124,6 +124,7 @@ test("管理员能区分可靠拒答并使用已配置的人工联系入口", as
     await route.fulfill({
       body: `${JSON.stringify({
         type: "refusal",
+        resultType: "grounded_refusal",
         message: "当前可用知识不足以支持这个问题的事实性回答。",
         contact: {
           label: "联系业务团队",
@@ -156,6 +157,117 @@ test("管理员能区分可靠拒答并使用已配置的人工联系入口", as
   await expect(page.getByText("回答依据", { exact: true })).toHaveCount(0);
 });
 
+test("管理员预览把交流性回应和澄清提问呈现为无附加动作的普通消息", async ({
+  page,
+  request,
+}) => {
+  const ordinaryResponses = [
+    {
+      answer: "您好，我是演示业务顾问。您可以咨询演示业务范围。",
+      resultType: "conversational_response",
+    },
+    {
+      answer: "您想了解“退款”的哪一方面？请补充具体问题。",
+      resultType: "clarification_request",
+    },
+    {
+      answer:
+        "Hello, I’m Demo Business Advisor. You can ask about demo services.",
+      resultType: "conversational_response",
+    },
+    {
+      answer: "关于“退款 pricing”，您想了解哪一方面？请补充具体问题。",
+      resultType: "clarification_request",
+    },
+  ] as const;
+  let previewRequests = 0;
+  await signInAsAdministrator(page, request);
+  await page.route("**/api/admin/assistant/preview", async (route) => {
+    previewRequests += 1;
+    const response =
+      ordinaryResponses[previewRequests - 1] ??
+      ordinaryResponses.at(-1)!;
+    await route.fulfill({
+      body: [
+        JSON.stringify({
+          type: "text_delta",
+          delta: response.answer,
+        }),
+        JSON.stringify({
+          type: "complete",
+          resultType: response.resultType,
+          citations: [],
+        }),
+        "",
+      ].join("\n"),
+      contentType: "application/x-ndjson; charset=utf-8",
+      status: 200,
+    });
+  });
+
+  await page.goto("/admin/assistant");
+  const preview = page.getByLabel("助手后台预览");
+  await page.getByLabel("预览问题").fill("你好");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    preview.getByText(
+      "您好，我是演示业务顾问。您可以咨询演示业务范围。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    preview.getByText("回答依据", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    preview.getByText("现有知识暂时无法确认", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    preview.getByRole("link", { name: "联系业务团队" }),
+  ).toHaveCount(0);
+
+  await page.getByLabel("预览问题").fill("退款");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    preview.getByText(
+      "您想了解“退款”的哪一方面？请补充具体问题。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    preview.getByText("回答依据", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    preview.getByText("现有知识暂时无法确认", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    preview.getByText(/conversational_response|clarification_request/),
+  ).toHaveCount(0);
+
+  await page.getByLabel("预览问题").fill("Hello");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    preview.getByText(
+      "Hello, I’m Demo Business Advisor. You can ask about demo services.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  await page.getByLabel("预览问题").fill("退款 pricing");
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    preview.getByText(
+      "关于“退款 pricing”，您想了解哪一方面？请补充具体问题。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    preview.getByText("回答依据", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    preview.getByRole("link", { name: "联系业务团队" }),
+  ).toHaveCount(0);
+});
+
 test("技术故障保留问题并允许成功重试且不重复显示回答", async ({
   page,
   request,
@@ -186,6 +298,7 @@ test("技术故障保留问题并允许成功重试且不重复显示回答", as
             },
             {
               type: "complete",
+              resultType: "grounded_answer",
               citations: [],
             },
           ];
@@ -253,7 +366,11 @@ test("回答正文只渲染受控 Markdown 并移除危险内容", async ({
     await route.fulfill({
       body: [
         JSON.stringify({ type: "text_delta", delta: answer }),
-        JSON.stringify({ type: "complete", citations: [] }),
+        JSON.stringify({
+          type: "complete",
+          resultType: "grounded_answer",
+          citations: [],
+        }),
         "",
       ].join("\n"),
       contentType: "application/x-ndjson; charset=utf-8",
