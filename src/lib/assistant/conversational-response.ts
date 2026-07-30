@@ -4,7 +4,6 @@ import {
 } from "./business-configuration.ts";
 import type {
   AssistantResponseEvent,
-  GroundedAnswerEvent,
 } from "./grounded-answer.ts";
 import {
   detectQuestionLanguage,
@@ -226,7 +225,7 @@ export function streamRoutedAssistantResponse(input: {
   question: string;
   route: ConversationInputRoute;
   assistant: ConversationalAssistant;
-  streamKnowledgeAnswer(): AsyncIterable<GroundedAnswerEvent>;
+  streamKnowledgeAnswer(): AsyncIterable<AssistantResponseEvent>;
 }): AsyncIterable<AssistantResponseEvent> {
   return input.route.type === "conversational_response"
     ? streamConversationalResponse({

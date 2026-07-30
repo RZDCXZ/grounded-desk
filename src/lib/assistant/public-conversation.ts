@@ -7,7 +7,6 @@ import {
 import type {
   AssistantResponseEvent,
   ConversationContextMessage,
-  GroundedAnswerEvent,
   GroundedCitation,
 } from "./grounded-answer.ts";
 import { detectQuestionLanguage } from "./question-language.ts";
@@ -63,7 +62,7 @@ type PublicConversationDependencies = {
   >;
   streamAnswer(
     start: PublicConversationStart & { question: string },
-  ): AsyncIterable<GroundedAnswerEvent>;
+  ): AsyncIterable<AssistantResponseEvent>;
   completeConversation(
     start: PublicConversationStart,
     outcome: PublicConversationOutcome,

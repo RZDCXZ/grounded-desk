@@ -1,6 +1,6 @@
 import {
   streamGroundedAnswer,
-  type GroundedAnswerEvent,
+  type AssistantResponseEvent,
   type GroundedEvidence,
   type RetrievedContentUnit,
 } from "../../src/lib/assistant/grounded-answer.ts";
@@ -46,6 +46,7 @@ type RetrievalEvaluationCase = {
 type CaseFailure =
   | "false_refusal"
   | "false_answer"
+  | "unexpected_clarification"
   | "unsupported_fact"
   | "missing_citation"
   | "unexpected_citation"
@@ -56,7 +57,11 @@ type EvaluationCaseResult = {
   id: string;
   language: EvaluationLanguage;
   expected: "answer" | "refusal";
-  actual: "answer" | "refusal" | "technical_error";
+  actual:
+    | "answer"
+    | "refusal"
+    | "clarification"
+    | "technical_error";
   passed: boolean;
   failures: CaseFailure[];
 };
@@ -72,12 +77,14 @@ export type RetrievalEvaluationSummary = {
   outcomes: {
     groundedAnswers: number;
     groundedRefusals: number;
+    clarifications: number;
     correct: number;
     passRate: number;
   };
   failures: {
     falseRefusals: number;
     falseAnswers: number;
+    unexpectedClarifications: number;
     unsupportedFacts: number;
     missingCitations: number;
     unexpectedCitations: number;
@@ -336,6 +343,10 @@ export async function runRetrievalEvaluation(
   const failures = {
     falseRefusals: countFailure(cases, "false_refusal"),
     falseAnswers: countFailure(cases, "false_answer"),
+    unexpectedClarifications: countFailure(
+      cases,
+      "unexpected_clarification",
+    ),
     unsupportedFacts: countFailure(cases, "unsupported_fact"),
     missingCitations: countFailure(cases, "missing_citation"),
     unexpectedCitations: countFailure(cases, "unexpected_citation"),
@@ -360,6 +371,9 @@ export async function runRetrievalEvaluation(
     outcomes: {
       groundedAnswers: cases.filter(({ actual }) => actual === "answer").length,
       groundedRefusals: cases.filter(({ actual }) => actual === "refusal").length,
+      clarifications: cases.filter(
+        ({ actual }) => actual === "clarification",
+      ).length,
       correct,
       passRate: Number((correct / cases.length).toFixed(4)),
     },
@@ -381,7 +395,7 @@ async function evaluateCase(
     evaluationCase.expectation.type === "answer"
       ? evaluationCase.expectation
       : null;
-  const events: GroundedAnswerEvent[] = [];
+  const events: AssistantResponseEvent[] = [];
   let finalEvidence: GroundedEvidence[] = [];
 
   try {
@@ -464,7 +478,7 @@ async function evaluateCase(
   }
 
   const refusal = events.find(
-    (event): event is Extract<GroundedAnswerEvent, { type: "refusal" }> =>
+    (event): event is Extract<AssistantResponseEvent, { type: "refusal" }> =>
       event.type === "refusal",
   );
   if (refusal) {
@@ -482,16 +496,36 @@ async function evaluateCase(
     );
   }
 
+  const clarification = events.find(
+    (event): event is Extract<
+      AssistantResponseEvent,
+      { type: "complete"; resultType: "clarification_request" }
+    > =>
+      event.type === "complete" &&
+      event.resultType === "clarification_request",
+  );
+  if (clarification) {
+    return caseResult(
+      evaluationCase,
+      "clarification",
+      ["unexpected_clarification"],
+    );
+  }
+
   const answer = events
     .filter(
-      (event): event is Extract<GroundedAnswerEvent, { type: "text_delta" }> =>
+      (event): event is Extract<AssistantResponseEvent, { type: "text_delta" }> =>
         event.type === "text_delta",
     )
     .map(({ delta }) => delta)
     .join("");
   const completion = events.find(
-    (event): event is Extract<GroundedAnswerEvent, { type: "complete" }> =>
-      event.type === "complete",
+    (event): event is Extract<
+      AssistantResponseEvent,
+      { type: "complete"; resultType: "grounded_answer" }
+    > =>
+      event.type === "complete" &&
+      event.resultType === "grounded_answer",
   );
 
   if (!completion) {

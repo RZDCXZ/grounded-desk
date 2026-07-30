@@ -28,6 +28,7 @@ test("独立命令运行完整双语检索基线并输出可比较摘要", async
   assert.deepEqual(result.summary.failures, {
     falseRefusals: 0,
     falseAnswers: 0,
+    unexpectedClarifications: 0,
     unsupportedFacts: 0,
     missingCitations: 0,
     unexpectedCitations: 0,

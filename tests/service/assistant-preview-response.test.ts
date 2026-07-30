@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ProviderCallError } from "../../src/lib/assistant/grounded-answer.ts";
+import {
+  ProviderCallError,
+  streamGroundedAnswer,
+} from "../../src/lib/assistant/grounded-answer.ts";
 import {
   routeConversationInput,
   streamRoutedAssistantResponse,
@@ -56,6 +59,90 @@ test("预览 HTTP 流对高置信交流输入使用受控回应且不调用知�
     },
   ]);
   assert.equal(knowledgeCalls, 0);
+});
+
+test("预览 HTTP 流在知识检索无证据时展示普通澄清提问", async () => {
+  const question = "退款";
+  const assistant = {
+    name: "演示业务顾问",
+    serviceScope: "演示业务范围",
+    tone: "professional",
+    humanContactLabel: "联系业务团队",
+    humanContactUrl: "https://example.com/contact",
+  };
+  const providerCalls: string[] = [];
+  const response = createAssistantPreviewResponse(
+    streamRoutedAssistantResponse({
+      question,
+      route: routeConversationInput(question),
+      assistant,
+      streamKnowledgeAnswer: () =>
+        streamGroundedAnswer(
+          {
+            organizationId: "organization-1",
+            question,
+            assistant,
+          },
+          {
+            questionEmbeddingProvider: {
+              provider: "test",
+              model: "embedding",
+              async embed() {
+                providerCalls.push("embedding");
+                return previewProviderResult(
+                  [0.1, 0.2],
+                  "embedding-trace",
+                );
+              },
+            },
+            candidateRepository: {
+              async retrieve() {
+                return [];
+              },
+            },
+            rerankingProvider: {
+              provider: "test",
+              model: "rerank",
+              async rerank() {
+                assert.fail("无候选证据时不应重排");
+              },
+            },
+            answerProvider: {
+              provider: "test",
+              model: "answer",
+              streamAnswer() {
+                assert.fail("澄清提问不应调用回答模型");
+              },
+            },
+            callLogger: {
+              async record() {},
+            },
+            config: {
+              candidateLimit: 20,
+              evidenceLimit: 5,
+              evidenceThreshold: 0.85,
+            },
+          },
+        ),
+    }),
+    {
+      label: assistant.humanContactLabel,
+      url: assistant.humanContactUrl,
+    },
+  );
+
+  assert.deepEqual(await readNdjson(response), [
+    {
+      type: "text_delta",
+      delta: "您想了解“退款”的哪一方面？请补充具体问题。",
+    },
+    {
+      type: "complete",
+      resultType: "clarification_request",
+      citations: [],
+    },
+  ]);
+  assert.deepEqual(providerCalls, ["embedding"]);
 });
 
 test("预览 HTTP 流将供应商超时映射为可重试技术故障而非可靠拒答", async () => {
@@ -139,4 +226,13 @@ async function readNdjson(response: Response) {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as unknown);
+}
+
+function previewProviderResult<T>(value: T, traceId: string) {
+  return {
+    value,
+    durationMs: 1,
+    tokens: { input: 1, output: 0, total: 1 },
+    traceId,
+  };
 }

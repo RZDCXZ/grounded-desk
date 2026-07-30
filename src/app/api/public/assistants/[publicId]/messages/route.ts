@@ -58,7 +58,7 @@ export async function POST(
             process.env,
             "PUBLIC_CONVERSATION_CONTEXT_MESSAGES",
             6,
-            0,
+            2,
             20,
           ),
           request_uses_ai: usesAi ?? true,

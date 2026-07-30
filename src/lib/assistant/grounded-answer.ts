@@ -5,6 +5,7 @@ import {
   type ProviderErrorType,
 } from "../ai/provider-call.ts";
 import type { ConversationResultType } from "./conversation-result.ts";
+import { createClarificationRequest } from "./clarification-request.ts";
 import { detectQuestionLanguage } from "./question-language.ts";
 
 export { ProviderCallError } from "../ai/provider-call.ts";
@@ -150,7 +151,7 @@ type GroundedAnswerInput = {
 export async function* streamGroundedAnswer(
   input: GroundedAnswerInput,
   dependencies: GroundedAnswerDependencies,
-): AsyncGenerator<GroundedAnswerEvent> {
+): AsyncGenerator<AssistantResponseEvent> {
   const context = input.context ?? [];
   const retrievalQuestion = createRetrievalQuestion(
     input.question,
@@ -172,7 +173,7 @@ export async function* streamGroundedAnswer(
   );
 
   if (candidates.length === 0) {
-    yield createGroundedRefusal(input.assistant, input.question);
+    yield* createInsufficientEvidenceResponse(input, context);
     return;
   }
 
@@ -209,7 +210,7 @@ export async function* streamGroundedAnswer(
     });
 
   if (evidence.length === 0) {
-    yield createGroundedRefusal(input.assistant, input.question);
+    yield* createInsufficientEvidenceResponse(input, context);
     return;
   }
 
@@ -313,6 +314,31 @@ function createGroundedRefusal(
       label: assistant.humanContactLabel,
       url: assistant.humanContactUrl,
     },
+  };
+}
+
+function* createInsufficientEvidenceResponse(
+  input: GroundedAnswerInput,
+  context: ConversationContextMessage[],
+): Generator<AssistantResponseEvent> {
+  const clarification = createClarificationRequest(
+    input.question,
+    context,
+  );
+
+  if (!clarification) {
+    yield createGroundedRefusal(input.assistant, input.question);
+    return;
+  }
+
+  yield {
+    type: "text_delta",
+    delta: clarification,
+  };
+  yield {
+    type: "complete",
+    resultType: "clarification_request",
+    citations: [],
   };
 }
 

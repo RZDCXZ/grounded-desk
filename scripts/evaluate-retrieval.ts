@@ -22,8 +22,10 @@ function printSummary(summary: Awaited<ReturnType<typeof runRetrievalEvaluation>
       `配置：召回 ${config.candidateLimit}，重排保留 ${config.evidenceLimit}，相关性阈值 ${config.evidenceThreshold}`,
       `数据集：${dataset.total} 题（应答 ${dataset.answerable}，拒答 ${dataset.refusal}；中文 ${dataset.languages.zh}，英文 ${dataset.languages.en}）`,
       `结果：${outcomes.correct}/${dataset.total} 通过，通过率 ${(outcomes.passRate * 100).toFixed(1)}%`,
+      `有据回答 ${outcomes.groundedAnswers}｜可靠拒答 ${outcomes.groundedRefusals}｜澄清 ${outcomes.clarifications}`,
       `错误拒答 ${failures.falseRefusals}｜错误回答 ${failures.falseAnswers}｜来源外事实 ${failures.unsupportedFacts}`,
-      `引用缺失 ${failures.missingCitations}｜非预期引用 ${failures.unexpectedCitations}｜语言不匹配 ${failures.languageMismatches}｜技术错误 ${failures.technicalErrors}`,
+      `意外澄清 ${failures.unexpectedClarifications}｜引用缺失 ${failures.missingCitations}｜非预期引用 ${failures.unexpectedCitations}`,
+      `语言不匹配 ${failures.languageMismatches}｜技术错误 ${failures.technicalErrors}`,
       `中文契约违规 ${byLanguage.zh.contractViolations}｜英文契约违规 ${byLanguage.en.contractViolations}`,
     ].join("\n") + "\n",
   );

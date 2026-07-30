@@ -6,7 +6,11 @@ import {
   type PublicConversationOutcome,
   type PublicConversationStart,
 } from "../../src/lib/assistant/public-conversation.ts";
-import type { GroundedAnswerEvent } from "../../src/lib/assistant/grounded-answer.ts";
+import {
+  streamGroundedAnswer,
+  type AssistantResponseEvent,
+  type ConversationContextMessage,
+} from "../../src/lib/assistant/grounded-answer.ts";
 
 const publicId = "00000000-0000-4000-8000-000000000301";
 const conversationId = "00000000-0000-4000-8000-000000000401";
@@ -119,6 +123,116 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
       ],
     },
   ]);
+});
+
+test("公开消息接口流式返回并持久化无引用的澄清提问", async () => {
+  const result = await runPublicKnowledgeScenario("退款");
+
+  assert.deepEqual(result.events, [
+    {
+      type: "text_delta",
+      delta: "您想了解“退款”的哪一方面？请补充具体问题。",
+    },
+    {
+      type: "complete",
+      resultType: "clarification_request",
+      citations: [],
+    },
+  ]);
+  assert.deepEqual(result.usesAi, [true]);
+  assert.deepEqual(result.outcomes, [
+    {
+      type: "clarification_request",
+      content: "您想了解“退款”的哪一方面？请补充具体问题。",
+      citations: [],
+    },
+  ]);
+  assert.deepEqual(result.providerCalls, ["embedding"]);
+});
+
+test("公开消息接口让有充分证据的短主题形成有据回答", async () => {
+  const result = await runPublicKnowledgeScenario("退款", {
+    hasEvidence: true,
+  });
+
+  assert.deepEqual(result.providerCalls, [
+    "embedding",
+    "rerank",
+    "answer",
+  ]);
+  assert.equal(result.outcomes[0]?.type, "grounded_answer");
+  assert.deepEqual(result.events, [
+    {
+      type: "text_delta",
+      delta: "根据现有知识，这是有据回答。",
+    },
+    {
+      type: "complete",
+      resultType: "grounded_answer",
+      citations: [
+        {
+          knowledgeSourceId: "source-refund",
+          title: "退款说明",
+          url: "https://example.com/refunds",
+        },
+      ],
+    },
+  ]);
+});
+
+test("公开消息接口让证据不足的完整短问题形成可靠拒答", async () => {
+  const result = await runPublicKnowledgeScenario("多少钱？");
+
+  assert.deepEqual(result.events, [
+    {
+      type: "refusal",
+      resultType: "grounded_refusal",
+      message: "当前可用知识不足以支持这个问题的事实性回答。",
+      contact: {
+        label: "联系业务团队",
+        url: "https://example.com/contact",
+      },
+    },
+  ]);
+  assert.equal(result.outcomes[0]?.type, "grounded_refusal");
+});
+
+test("公开消息接口在澄清后结合近期上下文重新检索成功", async () => {
+  const clarificationContext = previousClarificationContext();
+  const result = await runPublicKnowledgeScenario("多久到账？", {
+    context: clarificationContext,
+    hasEvidence: true,
+  });
+
+  assert.deepEqual(result.embeddingQuestions, [
+    [
+      "近期会话消息：",
+      "访客：退款",
+      "助手：您想了解“退款”的哪一方面？请补充具体问题。",
+      "当前问题：",
+      "多久到账？",
+    ].join("\n"),
+  ]);
+  assert.equal(result.outcomes[0]?.type, "grounded_answer");
+});
+
+test("公开消息接口在澄清后仍无证据时可靠拒答且不连续澄清", async () => {
+  const result = await runPublicKnowledgeScenario("时间", {
+    context: previousClarificationContext(),
+  });
+
+  assert.deepEqual(result.events, [
+    {
+      type: "refusal",
+      resultType: "grounded_refusal",
+      message: "当前可用知识不足以支持这个问题的事实性回答。",
+      contact: {
+        label: "联系业务团队",
+        url: "https://example.com/contact",
+      },
+    },
+  ]);
+  assert.equal(result.outcomes[0]?.type, "grounded_refusal");
 });
 
 test("纯中文问候由服务端形成不调用 AI 的交流性回应", async () => {
@@ -773,6 +887,158 @@ function publicConversationStart(): PublicConversationStart {
   };
 }
 
+async function runPublicKnowledgeScenario(
+  question: string,
+  options: {
+    context?: ConversationContextMessage[];
+    hasEvidence?: boolean;
+  } = {},
+) {
+  const embeddingQuestions: string[] = [];
+  const outcomes: PublicConversationOutcome[] = [];
+  const providerCalls: string[] = [];
+  const usesAi: boolean[] = [];
+  const response = await createPublicConversationResponse(
+    questionRequest(question),
+    publicId,
+    {
+      async beginConversation(
+        _requestedPublicId,
+        _question,
+        _conversationId,
+        _retry,
+        requestUsesAi,
+      ) {
+        usesAi.push(requestUsesAi);
+        return {
+          ...publicConversationStart(),
+          context: options.context,
+        };
+      },
+      streamAnswer(start) {
+        return streamGroundedAnswer(
+          {
+            organizationId: start.organizationId,
+            question: start.question,
+            context: start.context,
+            assistant: start.assistant,
+          },
+          {
+            questionEmbeddingProvider: {
+              provider: "test",
+              model: "embedding",
+              async embed(retrievalQuestion) {
+                providerCalls.push("embedding");
+                embeddingQuestions.push(retrievalQuestion);
+                return publicProviderResult(
+                  [0.1, 0.2],
+                  "embedding-trace",
+                );
+              },
+            },
+            candidateRepository: {
+              async retrieve() {
+                return options.hasEvidence
+                  ? [
+                      {
+                        id: "unit-refund",
+                        knowledgeSourceId: "source-refund",
+                        sourceTitle: "退款说明",
+                        sourceUrl: "https://example.com/refunds",
+                        heading: "退款时间",
+                        content: "退款到账时间以业务知识说明为准。",
+                        similarity: 0.8,
+                      },
+                    ]
+                  : [];
+              },
+            },
+            rerankingProvider: {
+              provider: "test",
+              model: "rerank",
+              async rerank() {
+                providerCalls.push("rerank");
+                return publicProviderResult(
+                  [
+                    {
+                      contentUnitId: "unit-refund",
+                      score: 0.91,
+                    },
+                  ],
+                  "rerank-trace",
+                );
+              },
+            },
+            answerProvider: {
+              provider: "test",
+              model: "answer",
+              streamAnswer() {
+                providerCalls.push("answer");
+                return {
+                  textStream: (async function* () {
+                    yield "根据现有知识，这是有据回答。";
+                  })(),
+                  metadata: Promise.resolve({
+                    durationMs: 1,
+                    tokens: { input: 1, output: 1, total: 2 },
+                    traceId: "answer-trace",
+                  }),
+                };
+              },
+            },
+            callLogger: {
+              async record() {},
+            },
+            config: {
+              candidateLimit: 20,
+              evidenceLimit: 5,
+              evidenceThreshold: 0.85,
+            },
+          },
+        );
+      },
+      async completeConversation(_start, outcome) {
+        outcomes.push(outcome);
+      },
+      async failConversation() {
+        assert.fail("知识场景不应保存为技术故障");
+      },
+    },
+  );
+
+  return {
+    embeddingQuestions,
+    events: await readNdjson(response),
+    outcomes,
+    providerCalls,
+    usesAi,
+  };
+}
+
+function previousClarificationContext(): ConversationContextMessage[] {
+  return [
+    {
+      role: "visitor",
+      content: "退款",
+      resultType: null,
+    },
+    {
+      role: "assistant",
+      content: "您想了解“退款”的哪一方面？请补充具体问题。",
+      resultType: "clarification_request",
+    },
+  ];
+}
+
+function publicProviderResult<T>(value: T, traceId: string) {
+  return {
+    value,
+    durationMs: 1,
+    tokens: { input: 1, output: 0, total: 1 },
+    traceId,
+  };
+}
+
 async function runRoutedQuestion(
   question: string,
   assistantOverrides: Partial<PublicConversationStart["assistant"]> = {},
@@ -841,7 +1107,7 @@ function questionRequest(question: string) {
   });
 }
 
-async function* answerEvents(events: GroundedAnswerEvent[]) {
+async function* answerEvents(events: AssistantResponseEvent[]) {
   yield* events;
 }
 
