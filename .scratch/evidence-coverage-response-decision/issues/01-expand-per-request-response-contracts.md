@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] 现有有据回答、可靠拒答、交流性回应、澄清提问和技术故障数据继续满足原有约束并可正常读取。
 - [ ] 新契约可以保存一条消息中最多三项有顺序的事实诉求，并记录完整性、覆盖状态、澄清轮次和策略版本。

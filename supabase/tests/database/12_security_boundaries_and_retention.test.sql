@@ -15,6 +15,8 @@ values
   ('conversations'),
   ('messages'),
   ('citations'),
+  ('message_factual_requests'),
+  ('evidence_snapshots'),
   ('quality_feedback'),
   ('unresolved_questions'),
   ('ai_call_logs');
@@ -403,7 +405,7 @@ select results_eq(
       and business_column.column_name = 'organization_id'
       and business_column.is_nullable = 'NO'
   $$,
-  array[10],
+  array[12],
   'every organization-owned business table requires an organization'
 );
 
@@ -418,7 +420,7 @@ select results_eq(
     where business_schema.nspname = 'public'
       and business_table.relrowsecurity
   $$,
-  array[10],
+  array[12],
   'every organization-owned business table has row level security'
 );
 
