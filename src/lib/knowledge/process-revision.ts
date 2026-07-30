@@ -46,7 +46,6 @@ export type KnowledgeProcessingResult =
 
 type PreparedContentUnit = Omit<KnowledgeContentUnit, "embedding">;
 
-const MINIMUM_BODY_CHARACTERS = 80;
 const MAXIMUM_BODY_CHARACTERS = 50_000;
 const MAXIMUM_CONTENT_UNIT_CHARACTERS = 1_200;
 const MAXIMUM_HEADING_CHARACTERS = 200;
@@ -58,8 +57,8 @@ export async function processKnowledgeRevision(
   const body = revision.body.trim();
   const bodyCharacterCount = Array.from(body).length;
 
-  if (bodyCharacterCount < MINIMUM_BODY_CHARACTERS) {
-    const reason = `正文内容过短，请补充至少 ${MINIMUM_BODY_CHARACTERS} 个字符后重试。`;
+  if (bodyCharacterCount === 0) {
+    const reason = "正文内容不能为空，请补充后重试。";
     return failRevision(revision.id, reason, dependencies.revisionRepository);
   }
 
@@ -68,19 +67,7 @@ export async function processKnowledgeRevision(
     return failRevision(revision.id, reason, dependencies.revisionRepository);
   }
 
-  if ((body.match(/[\p{L}\p{N}]/gu) ?? []).length < 20) {
-    const reason =
-      "正文无法形成有效内容单元，请补充清晰的标题和段落内容后重试。";
-    return failRevision(revision.id, reason, dependencies.revisionRepository);
-  }
-
   const preparedUnits = formContentUnits(revision.title, body);
-
-  if (preparedUnits.length === 0) {
-    const reason =
-      "正文无法形成有效内容单元，请补充清晰的标题和段落内容后重试。";
-    return failRevision(revision.id, reason, dependencies.revisionRepository);
-  }
 
   try {
     await dependencies.revisionRepository.advanceStage?.(
@@ -141,6 +128,14 @@ function formContentUnits(title: string, body: string): PreparedContentUnit[] {
         content: [context, segment].filter(Boolean).join("\n\n"),
       });
     }
+  }
+
+  if (units.length === 0) {
+    units.push({
+      position: 0,
+      heading: null,
+      content: [title.trim(), body].filter(Boolean).join("\n\n"),
+    });
   }
 
   return units;

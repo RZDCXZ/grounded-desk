@@ -30,6 +30,7 @@ type KnowledgeSource = {
   status: SourceStatus;
   failure_reason: string | null;
   current_revision_id: string | null;
+  created_at: string;
   updated_at: string;
 };
 
@@ -56,10 +57,11 @@ export default async function KnowledgeSourcesPage() {
     supabase
       .from("knowledge_sources")
       .select(
-        "id, title, source_type, original_url, status, failure_reason, current_revision_id, updated_at",
+        "id, title, source_type, original_url, status, failure_reason, current_revision_id, created_at, updated_at",
       )
       .eq("organization_id", organization.id)
-      .order("updated_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false }),
     supabase
       .from("knowledge_revisions")
       .select(

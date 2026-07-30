@@ -151,7 +151,7 @@ function NavigationContent({
                   className={cn(
                     "relative flex h-10 items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition-colors",
                     isCurrent
-                      ? "bg-forest-100 text-forest-950 before:absolute before:-left-3 before:h-5 before:w-0.5 before:bg-forest-800"
+                      ? "bg-forest-100 text-forest-950 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-forest-800"
                       : "text-ink-600 hover:bg-paper hover:text-ink-900",
                   )}
                   href={href}

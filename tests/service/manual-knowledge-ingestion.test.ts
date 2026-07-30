@@ -64,27 +64,58 @@ test("完整手工正文形成保留标题与段落语义的可用内容单元�
   assert.deepEqual(processingEvents, ["vectorizing", "embed", "complete"]);
 });
 
-test("正文过短时保存可理解的失败原因且不调用向量服务", async () => {
-  let failure: { revisionId: string; reason: string } | undefined;
+test("非空短正文可以形成可用知识版本", async () => {
+  let completedRevision: CompletedKnowledgeRevision | undefined;
 
   const result = await processKnowledgeRevision(
     {
       id: "revision-short",
-      title: "过短内容",
-      body: "只有一句话。",
+      title: "简短事实",
+      body: "支持退款。",
+    },
+    {
+      embeddingProvider: {
+        async embed(texts) {
+          return texts.map(() => [0.1, 0.2]);
+        },
+      },
+      revisionRepository: {
+        async complete(revision) {
+          completedRevision = revision;
+        },
+        async fail() {
+          assert.fail("非空正文不应进入失败分支");
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(result, { status: "available" });
+  assert.equal(completedRevision?.id, "revision-short");
+  assert.match(completedRevision?.contentUnits[0]?.content ?? "", /支持退款。/);
+});
+
+test("空白正文处理失败且不调用向量服务", async () => {
+  let failureReason = "";
+
+  const result = await processKnowledgeRevision(
+    {
+      id: "revision-empty",
+      title: "空白内容",
+      body: " \n\t ",
     },
     {
       embeddingProvider: {
         async embed() {
-          assert.fail("无效正文不应调用向量服务");
+          assert.fail("空白正文不应调用向量服务");
         },
       },
       revisionRepository: {
         async complete() {
-          assert.fail("无效正文不应形成可用知识版本");
+          assert.fail("空白正文不应形成可用知识版本");
         },
-        async fail(revisionId, reason) {
-          failure = { revisionId, reason };
+        async fail(_revisionId, reason) {
+          failureReason = reason;
         },
       },
     },
@@ -92,12 +123,9 @@ test("正文过短时保存可理解的失败原因且不调用向量服务", as
 
   assert.deepEqual(result, {
     status: "failed",
-    reason: "正文内容过短，请补充至少 80 个字符后重试。",
+    reason: "正文内容不能为空，请补充后重试。",
   });
-  assert.deepEqual(failure, {
-    revisionId: "revision-short",
-    reason: "正文内容过短，请补充至少 80 个字符后重试。",
-  });
+  assert.equal(failureReason, "正文内容不能为空，请补充后重试。");
 });
 
 test("正文过长时保存安全失败原因且不形成部分可用版本", async () => {
@@ -136,8 +164,8 @@ test("正文过长时保存安全失败原因且不形成部分可用版本", as
   );
 });
 
-test("正文无法形成有效内容单元时失败且不调用向量服务", async () => {
-  let failureReason = "";
+test("只要正文非空就可以形成内容单元", async () => {
+  let completedRevision: CompletedKnowledgeRevision | undefined;
 
   const result = await processKnowledgeRevision(
     {
@@ -155,28 +183,25 @@ test("正文无法形成有效内容单元时失败且不调用向量服务", as
     },
     {
       embeddingProvider: {
-        async embed() {
-          assert.fail("没有有效内容单元时不应调用向量服务");
+        async embed(texts) {
+          return texts.map(() => [0.1, 0.2]);
         },
       },
       revisionRepository: {
-        async complete() {
-          assert.fail("没有有效内容单元时不应形成可用知识版本");
+        async complete(revision) {
+          completedRevision = revision;
         },
-        async fail(_revisionId, reason) {
-          failureReason = reason;
+        async fail() {
+          assert.fail("非空正文不应进入失败分支");
         },
       },
     },
   );
 
-  assert.deepEqual(result, {
-    status: "failed",
-    reason: "正文无法形成有效内容单元，请补充清晰的标题和段落内容后重试。",
-  });
-  assert.equal(
-    failureReason,
-    "正文无法形成有效内容单元，请补充清晰的标题和段落内容后重试。",
+  assert.deepEqual(result, { status: "available" });
+  assert.match(
+    completedRevision?.contentUnits[0]?.content ?? "",
+    /！！！！/,
   );
 });
 

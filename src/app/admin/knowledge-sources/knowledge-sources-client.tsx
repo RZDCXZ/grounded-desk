@@ -161,7 +161,7 @@ export function AddKnowledgeSource() {
                       required
                     />
                     <FieldDescription>
-                      支持 80 至 50000
+                      正文不能为空，最多支持 50000
                       个字符；系统按标题与段落形成内容单元。
                     </FieldDescription>
                   </Field>
