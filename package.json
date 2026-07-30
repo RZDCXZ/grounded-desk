@@ -15,12 +15,18 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "db:migrate": "supabase migration up",
     "db:reset": "supabase db reset",
     "test:db": "supabase test db",
     "test:service": "node --conditions=react-server --test tests/service/*.test.ts",
-    "test:e2e": "pnpm db:reset && playwright test",
+    "test:e2e:browser": "playwright test",
+    "test:e2e": "pnpm db:reset && pnpm test:e2e:browser",
     "eval:retrieval": "node --env-file-if-exists=.env.local --conditions=react-server scripts/evaluate-retrieval.ts",
-    "test": "pnpm typecheck && pnpm lint && pnpm test:service && pnpm db:reset && pnpm test:db && playwright test"
+    "test:deterministic": "pnpm typecheck && pnpm lint && pnpm test:service && pnpm db:reset && pnpm test:db && pnpm eval:retrieval",
+    "release:local": "pnpm test:deterministic && pnpm test:e2e:browser",
+    "smoke:ai": "node --env-file-if-exists=.env.local --conditions=react-server scripts/smoke-live-ai.ts",
+    "test": "pnpm release:local"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.62",

@@ -54,14 +54,16 @@ async function signInAsAdministrator(page: Page, request: APIRequestContext) {
   await expect(page).toHaveURL(/\/admin$/);
 }
 
-test("管理员发布后访客可匿名连续咨询、重试并在下线后停止服务", async ({
+test("管理员通过网页知识完成预览、发布、公开咨询、引用核查和下线闭环", async ({
   context,
   page,
   request,
 }) => {
   const scenarioId = Date.now();
-  const sourceTitle = `公开咨询服务说明 ${scenarioId}`;
-  const sourceMarker = `PUBLIC-SERVICE-${scenarioId}-`.repeat(16);
+  const sourceMarker = `PUBLIC-SERVICE-${scenarioId}`;
+  const sourceTitle = `受控网页服务说明 ${sourceMarker}`;
+  const sourceUrl =
+    `http://127.0.0.1:4173/article?marker=${encodeURIComponent(sourceMarker)}`;
 
   await signInAsAdministrator(page, request);
   await page.goto("/admin/assistant");
@@ -83,31 +85,28 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
 
   await page.getByRole("link", { name: "知识来源", exact: true }).click();
   await page.getByRole("button", { name: "添加知识来源" }).click();
-  await page.getByRole("tab", { name: "手工内容" }).click();
-  await page.getByLabel("标题", { exact: true }).fill(sourceTitle);
   await page
-    .getByLabel("正文", { exact: true })
-    .fill(
-      [
-        `${sourceMarker} ${sourceMarker} ${sourceMarker}`,
-        "",
-        "## 服务范围",
-        "",
-        "演示组织提供知识整理、来源核查和有据回答配置服务，帮助团队把已维护的业务内容转化为可核查的访客回答。",
-        "",
-        "每条事实性回答都需要现有知识支持；知识不足时，助手会可靠拒答并提供人工联系入口。",
-      ].join("\n"),
-    );
-  await page
-    .getByLabel("原始 URL（可选）", { exact: true })
-    .fill("https://example.com/public-services");
+    .getByLabel("公开 HTTP/HTTPS 地址")
+    .fill(sourceUrl);
   const sourceRow = page
     .getByRole("row")
-    .filter({ hasText: sourceTitle });
+    .filter({ hasText: sourceUrl });
   await page.getByRole("button", { name: "确认添加" }).click();
+  await expect(sourceRow).toContainText(sourceTitle, { timeout: 15_000 });
   await expect(sourceRow).toContainText("可用", { timeout: 15_000 });
 
   await page.getByRole("link", { name: "助手", exact: true }).click();
+  await page
+    .getByLabel("预览问题")
+    .fill(`${sourceMarker} 你们提供什么服务，工作日多久响应？`);
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(/我们提供知识整理、来源核查和有据回答配置服务/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: new RegExp(sourceTitle) }),
+  ).toHaveAttribute("href", sourceUrl);
+
   await page.getByRole("button", { name: "发布助手" }).click();
 
   await expect(page.getByText("已发布", { exact: true }).first()).toBeVisible();
@@ -170,15 +169,32 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
   await page
     .getByLabel("咨询问题")
     .fill(`${sourceMarker} 你们提供什么服务？`);
+  const publicMessageResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes("/api/public/assistants/"),
+  );
   await page.getByRole("button", { name: "发送问题" }).click();
+  const publicMessageResponse = await publicMessageResponsePromise;
 
+  expect(publicMessageResponse.headers()["content-type"]).toContain(
+    "application/x-ndjson",
+  );
   await expect(
     page.getByText(/根据当前可用知识/),
   ).toBeVisible();
   await expect(page.getByText("回答依据", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("link", { name: new RegExp(sourceTitle) }),
-  ).toHaveAttribute("href", "https://example.com/public-services");
+  ).toHaveAttribute("href", sourceUrl);
+  const citationPagePromise = page.waitForEvent("popup");
+  await page.getByRole("link", { name: new RegExp(sourceTitle) }).click();
+  const citationPage = await citationPagePromise;
+  await expect(citationPage).toHaveURL(sourceUrl);
+  await expect(
+    citationPage.getByRole("heading", { name: sourceTitle }),
+  ).toBeVisible();
+  await citationPage.close();
   await expect(
     page.getByRole("group", { name: "评价这条助手回答" }),
   ).toBeVisible();
@@ -322,7 +338,7 @@ test("管理员发布后访客可匿名连续咨询、重试并在下线后停�
     embeddedConversation.getByRole("link", {
       name: new RegExp(sourceTitle),
     }),
-  ).toHaveAttribute("href", "https://example.com/public-services");
+  ).toHaveAttribute("href", sourceUrl);
   const embeddedScrollMetrics = await embeddedConversation
     .getByTestId("conversation-scroll-region")
     .evaluate((region) => {
