@@ -109,6 +109,12 @@ test("管理员复盘最近会话、保留引用快照并确认删除关联数�
   await expect(
     conversationList.getByText("技术故障", { exact: true }),
   ).toBeVisible();
+  const failureConversationLink = conversationList.getByRole("link", {
+    name: /触发系统错误的问题/,
+  });
+  await expect(
+    failureConversationLink.getByText("尚无质量反馈", { exact: true }),
+  ).toHaveCount(0);
 
   await page.getByLabel("搜索提问摘要").fill("系统错误");
   await page.getByRole("button", { name: "搜索" }).click();
@@ -129,9 +135,7 @@ test("管理员复盘最近会话、保留引用快照并确认删除关联数�
     page.getByText("现有知识暂时无法确认。", { exact: true }),
   ).toBeVisible();
 
-  await conversationList
-    .getByRole("link", { name: /触发系统错误的问题/ })
-    .click();
+  await failureConversationLink.click();
   await expect(page.getByText("技术故障", { exact: true })).toBeVisible();
   await expect(page.getByText("未创建待解决问题")).toBeVisible();
 

@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  CheckCircle2,
   Clock3,
   ExternalLink,
   FileText,
@@ -20,14 +19,16 @@ import { requireAdministrator } from "@/lib/auth/require-admin";
 import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
+import {
+  ConversationResultBadge,
+  type ConversationReviewResultType,
+} from "./conversation-result-badge";
 import { DeleteConversationAction } from "./delete-conversation-action";
 
 type MessageType =
   | "visitor_question"
   | "answer_retry"
-  | "grounded_answer"
-  | "grounded_refusal"
-  | "technical_failure";
+  | ConversationReviewResultType;
 type Message = {
   id: string;
   message_type: MessageType;
@@ -269,6 +270,9 @@ function AssistantMessage({
   const isPending = message.status === "pending";
   const isRefusal = message.message_type === "grounded_refusal";
   const isFailure = message.message_type === "technical_failure";
+  const isGroundedAnswer = message.message_type === "grounded_answer";
+  const resultType = getAssistantResultType(message);
+  const canHaveReviewMetadata = isGroundedAnswer || isRefusal;
 
   return (
     <article className="flex flex-col items-start gap-2">
@@ -280,6 +284,9 @@ function AssistantMessage({
           <span className="size-2 border border-forest-800" />
         </span>
         助手
+        <ConversationResultBadge
+          resultType={isPending ? null : resultType}
+        />
       </div>
       <div
         className={cn(
@@ -290,7 +297,9 @@ function AssistantMessage({
               ? "border-danger/30 bg-danger-light"
               : isRefusal
                 ? "border-warning/30 bg-warning-light"
-                : "border-line bg-card",
+                : isGroundedAnswer
+                  ? "border-line border-l-4 border-l-success bg-card"
+                  : "border-line bg-card",
           highlighted &&
             "ring-2 ring-warning ring-offset-4 ring-offset-paper",
         )}
@@ -309,15 +318,14 @@ function AssistantMessage({
             label="可靠拒答"
             tone="warning"
           />
-        ) : (
-          <ResultHeading
-            icon={CheckCircle2}
-            label="有据回答"
-            tone="success"
-          />
-        )}
+        ) : null}
 
-        <div className="mt-3 text-sm leading-6">
+        <div
+          className={cn(
+            "text-sm leading-6",
+            (isPending || isFailure || isRefusal) && "mt-3",
+          )}
+        >
           {isPending ? (
             <p>回答仍在生成中。</p>
           ) : (
@@ -325,7 +333,7 @@ function AssistantMessage({
           )}
         </div>
 
-        {citations.length > 0 ? (
+        {isGroundedAnswer && citations.length > 0 ? (
           <div className="mt-4 border-t border-line pt-3">
             <p className="mb-2 text-[11px] font-semibold text-ink-600">
               回答依据
@@ -338,7 +346,7 @@ function AssistantMessage({
           </div>
         ) : null}
 
-        {feedback ? (
+        {canHaveReviewMetadata && feedback ? (
           <div
             className={cn(
               "mt-4 flex items-center gap-2 border-t border-line pt-3 text-[12px] font-medium",
@@ -359,7 +367,7 @@ function AssistantMessage({
           </div>
         ) : null}
 
-        {linkedQuestion ? (
+        {canHaveReviewMetadata && linkedQuestion ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/20 bg-warning-light/60 p-3">
             <span className="text-[11px] text-warning">
               已关联{linkedQuestion.status === "pending" ? "待处理" : "已解决"}
@@ -394,19 +402,17 @@ function ResultHeading({
 }: {
   icon: LucideIcon;
   label: string;
-  tone: "success" | "warning" | "danger" | "info";
+  tone: "warning" | "danger" | "info";
 }) {
   return (
     <p
       className={cn(
         "flex items-center gap-2 text-[12px] font-semibold",
-        tone === "success"
-          ? "text-success"
-          : tone === "warning"
-            ? "text-warning"
-            : tone === "danger"
-              ? "text-danger"
-              : "text-info",
+        tone === "warning"
+          ? "text-warning"
+          : tone === "danger"
+            ? "text-danger"
+            : "text-info",
       )}
     >
       <Icon aria-hidden="true" className="size-4" />
@@ -447,6 +453,19 @@ function CitationCard({ citation }: { citation: Citation }) {
   ) : (
     <div className={className}>{content}</div>
   );
+}
+
+function getAssistantResultType(
+  message: Message,
+): ConversationReviewResultType | null {
+  if (
+    message.message_type === "visitor_question" ||
+    message.message_type === "answer_retry"
+  ) {
+    return null;
+  }
+
+  return message.message_type;
 }
 
 function countQuestions(messages: Message[]) {

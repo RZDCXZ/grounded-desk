@@ -60,6 +60,8 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   request,
 }) => {
   const scenarioId = Date.now();
+  const conversationalQuestion = "你好";
+  const clarificationQuestion = "退款";
   const sourceMarker = `PUBLIC-SERVICE-${scenarioId}`;
   const sourceTitle = `受控网页服务说明 ${sourceMarker}`;
   const sourceUrl =
@@ -263,6 +265,38 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await page.unroute(publicMessagesPattern);
   await page.reload();
 
+  await page.getByLabel("咨询问题").fill(conversationalQuestion);
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(/您好，我是演示业务顾问/),
+  ).toBeVisible();
+
+  const knowledgeControlPage = await context.newPage();
+  await knowledgeControlPage.goto("/admin/knowledge-sources");
+  const persistedSourceRow = knowledgeControlPage
+    .getByRole("row")
+    .filter({ hasText: sourceTitle });
+  await persistedSourceRow
+    .getByRole("button", { name: "停用" })
+    .click();
+  await expect(persistedSourceRow).toContainText("已停用");
+  await page.reload();
+
+  await page.getByLabel("咨询问题").fill(clarificationQuestion);
+  await page.getByRole("button", { name: "发送问题" }).click();
+  await expect(
+    page.getByText(
+      "您想了解“退款”的哪一方面？请补充具体问题。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await persistedSourceRow
+    .getByRole("button", { name: "重新启用" })
+    .click();
+  await expect(persistedSourceRow).toContainText("可用");
+  await knowledgeControlPage.close();
+  await page.reload();
+
   const publicMessageRequests: Array<{
     question: string;
     conversationId?: string;
@@ -320,10 +354,129 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   );
 
   const adminReviewPage = await context.newPage();
+  await adminReviewPage.goto("/admin/conversations");
+  const conversationList = adminReviewPage.getByRole("complementary", {
+    name: "会话列表",
+  });
+  const conversationResultFilters = adminReviewPage.getByRole(
+    "navigation",
+    { name: "会话结果筛选" },
+  );
+  await expect(
+    conversationResultFilters.getByRole("link", {
+      name: "交流性回应 1",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    conversationResultFilters.getByRole("link", {
+      name: "澄清提问 1",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    conversationResultFilters.getByRole("link", {
+      name: "有据回答 1",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    conversationResultFilters.getByRole("link", {
+      name: "可靠拒答 0",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    conversationResultFilters.getByRole("link", {
+      name: "技术故障 0",
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await conversationResultFilters
+    .getByRole("link", { name: "交流性回应 1", exact: true })
+    .click();
+  await expect(
+    conversationList.getByText(conversationalQuestion, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    conversationList.getByText(clarificationQuestion, { exact: true }),
+  ).toHaveCount(0);
+  await conversationList
+    .getByRole("link", { name: /你好/ })
+    .click();
+  const conversationalMessage = adminReviewPage
+    .getByRole("article")
+    .filter({ hasText: /您好，我是演示业务顾问/ });
+  await expect(
+    conversationalMessage.getByText("交流性回应", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    conversationalMessage.getByText("有据回答", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    conversationalMessage.getByText("回答依据", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    conversationalMessage.getByText(/访客评价|待解决问题/),
+  ).toHaveCount(0);
+
+  await conversationResultFilters
+    .getByRole("link", { name: "澄清提问 1", exact: true })
+    .click();
+  await expect(
+    conversationList.getByText(clarificationQuestion, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    conversationList.getByText(conversationalQuestion, { exact: true }),
+  ).toHaveCount(0);
+  const clarificationConversationLink = conversationList.getByRole(
+    "link",
+    { name: /退款/ },
+  );
+  await expect(
+    clarificationConversationLink.getByText("尚无质量反馈", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await clarificationConversationLink.click();
+  const clarificationMessage = adminReviewPage
+    .getByRole("article")
+    .filter({ hasText: "您想了解“退款”的哪一方面？请补充具体问题。" });
+  await expect(
+    clarificationMessage.getByText("澄清提问", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    clarificationMessage.getByText("可靠拒答", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    clarificationMessage.getByText("回答依据", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    clarificationMessage.getByText(/访客评价|待解决问题/),
+  ).toHaveCount(0);
+
+  await adminReviewPage.goto("/admin");
+  const overviewMetrics = adminReviewPage.getByRole("region", {
+    name: "系统初始统计",
+  });
+  await expect(
+    overviewMetrics.getByText("交流性回应", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    overviewMetrics.getByText("澄清提问", { exact: true }),
+  ).toHaveCount(0);
+
   await adminReviewPage.goto("/admin/unresolved-questions");
   await expect(
     adminReviewPage.getByRole("heading", { name: "待解决问题" }),
   ).toBeVisible();
+  await expect(
+    adminReviewPage.getByText(conversationalQuestion, { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    adminReviewPage.getByText(clarificationQuestion, { exact: true }),
+  ).toHaveCount(0);
   await expect(
     adminReviewPage.getByText("没帮助", { exact: true }).first(),
   ).toBeVisible();
@@ -359,6 +512,31 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   ).toBeVisible();
   await expect(
     adminReviewPage.getByText("已解决", { exact: true }).first(),
+  ).toBeVisible();
+
+  await adminReviewPage.goto(
+    "/admin/conversations?status=conversational_response",
+  );
+  await conversationList
+    .getByRole("link", { name: /你好/ })
+    .click();
+  await adminReviewPage
+    .getByRole("button", { name: "删除会话" })
+    .click();
+  await adminReviewPage
+    .getByRole("button", { name: "确认永久删除" })
+    .click();
+  await expect(
+    conversationResultFilters.getByRole("link", {
+      name: "交流性回应 0",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    conversationResultFilters.getByRole("link", {
+      name: "澄清提问 1",
+      exact: true,
+    }),
   ).toBeVisible();
   await adminReviewPage.close();
 

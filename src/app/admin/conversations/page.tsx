@@ -1,13 +1,8 @@
 import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock3,
   MessageSquareText,
   Search,
-  ServerCrash,
   ThumbsDown,
   ThumbsUp,
-  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -25,58 +20,30 @@ import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { ConversationDetail } from "./conversation-detail";
+import {
+  ConversationResultBadge,
+  type ConversationReviewResultType,
+} from "./conversation-result-badge";
 
-type ConversationResultType =
-  | "grounded_answer"
-  | "grounded_refusal"
-  | "technical_failure";
-type ResultFilter = "all" | ConversationResultType;
+type ResultFilter = "all" | ConversationReviewResultType;
 type ConversationSummary = {
   id: string;
   created_at: string;
   last_activity_at: string;
   question_summary: string;
-  result_type: ConversationResultType | null;
+  result_type: ConversationReviewResultType | null;
   feedback_value: "helpful" | "unhelpful" | null;
   question_count: number;
 };
-type ResultPresentation = {
-  className: string;
-  icon: LucideIcon;
-  label: string;
-};
 
-const resultPresentations: Record<
-  ConversationResultType,
-  ResultPresentation
-> = {
-  grounded_answer: {
-    className: "border-success/20 bg-success-light text-success",
-    icon: CheckCircle2,
-    label: "有据回答",
-  },
-  grounded_refusal: {
-    className: "border-warning/20 bg-warning-light text-warning",
-    icon: AlertTriangle,
-    label: "可靠拒答",
-  },
-  technical_failure: {
-    className: "border-danger/20 bg-danger-light text-danger",
-    icon: ServerCrash,
-    label: "技术故障",
-  },
-};
-const pendingResultPresentation: ResultPresentation = {
-  className: "border-line bg-paper text-ink-600",
-  icon: Clock3,
-  label: "等待回答",
-};
 const resultFilters: Array<{
   label: string;
   value: ResultFilter;
 }> = [
   { label: "全部", value: "all" },
   { label: "有据回答", value: "grounded_answer" },
+  { label: "交流性回应", value: "conversational_response" },
+  { label: "澄清提问", value: "clarification_request" },
   { label: "可靠拒答", value: "grounded_refusal" },
   { label: "技术故障", value: "technical_failure" },
 ];
@@ -297,7 +264,10 @@ function ConversationItem({
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <ConversationResultBadge resultType={conversation.result_type} />
-        <FeedbackLabel feedback={conversation.feedback_value} />
+        <FeedbackLabel
+          feedback={conversation.feedback_value}
+          resultType={conversation.result_type}
+        />
         <span className="ml-auto text-[10px] text-ink-400">
           {conversation.question_count} 个问题
         </span>
@@ -306,34 +276,20 @@ function ConversationItem({
   );
 }
 
-function ConversationResultBadge({
-  resultType,
-}: {
-  resultType: ConversationResultType | null;
-}) {
-  const presentation = resultType
-    ? resultPresentations[resultType]
-    : pendingResultPresentation;
-  const Icon = presentation.icon;
-
-  return (
-    <span
-      className={cn(
-        "mono inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[10px] font-semibold",
-        presentation.className,
-      )}
-    >
-      <Icon aria-hidden="true" className="size-3" />
-      {presentation.label}
-    </span>
-  );
-}
-
 function FeedbackLabel({
   feedback,
+  resultType,
 }: {
   feedback: ConversationSummary["feedback_value"];
+  resultType: ConversationSummary["result_type"];
 }) {
+  if (
+    resultType !== "grounded_answer" &&
+    resultType !== "grounded_refusal"
+  ) {
+    return null;
+  }
+
   if (!feedback) {
     return (
       <span className="text-[10px] text-ink-400">尚无质量反馈</span>
