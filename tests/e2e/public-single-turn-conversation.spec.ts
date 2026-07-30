@@ -285,7 +285,10 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
     .poll(async () =>
       (await readOrganizationAiCallTypes(administratorDataClient)).length,
     )
-    .toBe(aiCallsBeforeConversational.length);
+    .toBe(aiCallsBeforeConversational.length + 1);
+  const aiCallsAfterConversational =
+    await readOrganizationAiCallTypes(administratorDataClient);
+  expect(aiCallsAfterConversational.at(-1)).toBe("request_analysis");
 
   const knowledgeControlPage = await context.newPage();
   await knowledgeControlPage.goto("/admin/knowledge-sources");
@@ -300,23 +303,16 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await page.getByRole("button", { name: "发送问题" }).click();
   await expect(
     page.getByText(
-      "您想了解“退款”的哪一方面？请补充具体问题。",
+      "请补充：想了解退款的具体方面。",
       { exact: true },
     ),
   ).toBeVisible();
   const aiCallsAfterClarification =
     await readOrganizationAiCallTypes(administratorDataClient);
   const clarificationAiCalls = aiCallsAfterClarification.slice(
-    aiCallsBeforeConversational.length,
+    aiCallsAfterConversational.length,
   );
-  expect(clarificationAiCalls[0]).toBe("embedding");
-  expect(clarificationAiCalls).not.toContain("answer");
-  expect(
-    clarificationAiCalls.every(
-      (callType) =>
-        callType === "embedding" || callType === "rerank",
-    ),
-  ).toBe(true);
+  expect(clarificationAiCalls).toEqual(["request_analysis"]);
   await persistedSourceRow
     .getByRole("button", { name: "重新启用" })
     .click();
@@ -382,7 +378,12 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
         aiCallsBeforeGroundedAnswer,
       ),
     )
-    .toEqual(["embedding", "rerank", "answer"]);
+    .toEqual([
+      "request_analysis",
+      "embedding",
+      "rerank",
+      "answer",
+    ]);
   await page.getByRole("button", { name: "没帮助" }).click();
   await expect(page.getByRole("status")).toContainText(
     "已记录，感谢反馈",
@@ -477,7 +478,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await clarificationConversationLink.click();
   const clarificationMessage = adminReviewPage
     .getByRole("article")
-    .filter({ hasText: "您想了解“退款”的哪一方面？请补充具体问题。" });
+    .filter({ hasText: "请补充：想了解退款的具体方面。" });
   await expect(
     clarificationMessage.getByText("澄清提问", { exact: true }),
   ).toBeVisible();

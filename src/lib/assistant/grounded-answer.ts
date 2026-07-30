@@ -5,7 +5,6 @@ import {
   type ProviderErrorType,
 } from "../ai/provider-call.ts";
 import type { ConversationResultType } from "./conversation-result.ts";
-import { createClarificationRequest } from "./clarification-request.ts";
 import { detectQuestionLanguage } from "./question-language.ts";
 
 export { ProviderCallError } from "../ai/provider-call.ts";
@@ -69,7 +68,11 @@ export type AssistantResponseEvent =
 
 export type AiCallLog = {
   organizationId: string;
-  callType: "embedding" | "rerank" | "answer";
+  callType:
+    | "request_analysis"
+    | "embedding"
+    | "rerank"
+    | "answer";
   provider: string;
   model: string;
   inputTokens: number;
@@ -86,7 +89,7 @@ type ProviderIdentity = {
   model: string;
 };
 
-type GroundedAnswerDependencies = {
+export type GroundedAnswerDependencies = {
   questionEmbeddingProvider: ProviderIdentity & {
     embed(question: string): Promise<ProviderCallResult<number[]>>;
   };
@@ -135,7 +138,7 @@ type GroundedAnswerDependencies = {
   };
 };
 
-type GroundedAnswerInput = {
+export type GroundedAnswerInput = {
   organizationId: string;
   question: string;
   context?: ConversationContextMessage[];
@@ -173,7 +176,7 @@ export async function* streamGroundedAnswer(
   );
 
   if (candidates.length === 0) {
-    yield* createInsufficientEvidenceResponse(input, context);
+    yield* createInsufficientEvidenceResponse(input);
     return;
   }
 
@@ -210,7 +213,7 @@ export async function* streamGroundedAnswer(
     });
 
   if (evidence.length === 0) {
-    yield* createInsufficientEvidenceResponse(input, context);
+    yield* createInsufficientEvidenceResponse(input);
     return;
   }
 
@@ -319,27 +322,8 @@ function createGroundedRefusal(
 
 function* createInsufficientEvidenceResponse(
   input: GroundedAnswerInput,
-  context: ConversationContextMessage[],
 ): Generator<AssistantResponseEvent> {
-  const clarification = createClarificationRequest(
-    input.question,
-    context,
-  );
-
-  if (!clarification) {
-    yield createGroundedRefusal(input.assistant, input.question);
-    return;
-  }
-
-  yield {
-    type: "text_delta",
-    delta: clarification,
-  };
-  yield {
-    type: "complete",
-    resultType: "clarification_request",
-    citations: [],
-  };
+  yield createGroundedRefusal(input.assistant, input.question);
 }
 
 function createCitations(evidence: GroundedEvidence[]) {

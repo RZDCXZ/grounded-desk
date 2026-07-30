@@ -18,15 +18,6 @@ export type ConversationalCategory =
   | "capability"
   | "out_of_scope";
 
-export type ConversationInputRoute =
-  | {
-      type: "conversational_response";
-      category: ConversationalCategory;
-    }
-  | {
-      type: "knowledge";
-    };
-
 type ConversationalAssistant = {
   name: string;
   serviceScope: string;
@@ -37,176 +28,15 @@ type ConversationalTemplate = (
   assistant: ConversationalAssistant,
 ) => string;
 
-const chineseGreetings = new Set([
-  "你好",
-  "您好",
-  "嗨",
-  "哈喽",
-  "在吗",
-  "在不在",
-  "有人吗",
-]);
-
-const englishGreetings = new Set([
-  "hello",
-  "hi",
-  "hey",
-  "good morning",
-  "good afternoon",
-  "good evening",
-]);
-
-const chineseGratitude = new Set([
-  "谢谢",
-  "多谢",
-  "感谢",
-  "谢谢你",
-  "辛苦了",
-]);
-
-const englishGratitude = new Set([
-  "thanks",
-  "thank you",
-  "thanks a lot",
-  "much appreciated",
-]);
-
-const chineseFarewells = new Set([
-  "再见",
-  "拜拜",
-  "回头见",
-  "下次见",
-]);
-
-const englishFarewells = new Set([
-  "goodbye",
-  "bye",
-  "bye bye",
-  "see you",
-  "see you later",
-]);
-
-const chineseIdentityQuestions = new Set([
-  "你是谁",
-  "请问你是谁",
-  "你叫什么",
-  "你叫什么名字",
-  "你是哪个助手",
-]);
-
-const englishIdentityQuestions = new Set([
-  "who are you",
-  "what is your name",
-  "what's your name",
-  "which assistant are you",
-]);
-
-const chineseCapabilityQuestions = new Set([
-  "你能做什么",
-  "你会什么",
-  "你可以做什么",
-  "可以帮我做什么",
-  "你能帮我什么",
-  "你的服务范围是什么",
-  "你能提供什么帮助",
-]);
-
-const englishCapabilityQuestions = new Set([
-  "what can you do",
-  "how can you help",
-  "what can you help with",
-  "what do you help with",
-  "what are your capabilities",
-]);
-
-export function routeConversationInput(
-  question: string,
-): ConversationInputRoute {
-  const normalized = normalizeStandaloneExpression(question);
-
-  if (
-    matchesStandaloneCategory(
-      normalized,
-      chineseGreetings,
-      englishGreetings,
-    )
-  ) {
-    return {
-      type: "conversational_response",
-      category: "greeting",
-    };
-  }
-
-  if (isExplicitlyOutOfScope(normalized)) {
-    return {
-      type: "conversational_response",
-      category: "out_of_scope",
-    };
-  }
-
-  if (
-    matchesStandaloneCategory(
-      normalized,
-      chineseCapabilityQuestions,
-      englishCapabilityQuestions,
-    )
-  ) {
-    return {
-      type: "conversational_response",
-      category: "capability",
-    };
-  }
-
-  if (
-    matchesStandaloneCategory(
-      normalized,
-      chineseIdentityQuestions,
-      englishIdentityQuestions,
-    )
-  ) {
-    return {
-      type: "conversational_response",
-      category: "identity",
-    };
-  }
-
-  if (
-    matchesStandaloneCategory(
-      normalized,
-      chineseFarewells,
-      englishFarewells,
-    )
-  ) {
-    return {
-      type: "conversational_response",
-      category: "farewell",
-    };
-  }
-
-  if (
-    matchesStandaloneCategory(
-      normalized,
-      chineseGratitude,
-      englishGratitude,
-    )
-  ) {
-    return {
-      type: "conversational_response",
-      category: "gratitude",
-    };
-  }
-
-  return { type: "knowledge" };
-}
-
 export async function* streamConversationalResponse(input: {
   question: string;
   category: ConversationalCategory;
+  language?: QuestionLanguage;
   assistant: ConversationalAssistant;
 }): AsyncGenerator<AssistantResponseEvent> {
   const content = createConversationalContent(
     input.category,
-    detectQuestionLanguage(input.question),
+    input.language ?? detectQuestionLanguage(input.question),
     input.assistant,
   );
 
@@ -219,21 +49,6 @@ export async function* streamConversationalResponse(input: {
     resultType: "conversational_response",
     citations: [],
   };
-}
-
-export function streamRoutedAssistantResponse(input: {
-  question: string;
-  route: ConversationInputRoute;
-  assistant: ConversationalAssistant;
-  streamKnowledgeAnswer(): AsyncIterable<AssistantResponseEvent>;
-}): AsyncIterable<AssistantResponseEvent> {
-  return input.route.type === "conversational_response"
-    ? streamConversationalResponse({
-        question: input.question,
-        category: input.route.category,
-        assistant: input.assistant,
-      })
-    : input.streamKnowledgeAnswer();
 }
 
 function createConversationalContent(
@@ -363,48 +178,3 @@ const conversationalTemplates: Record<
     },
   },
 };
-
-function normalizeStandaloneExpression(value: string) {
-  return value
-    .normalize("NFKC")
-    .trim()
-    .toLocaleLowerCase("en")
-    .replace(/^[\s,.!?，。！？、；;：:~～]+/u, "")
-    .replace(/[\s,.!?，。！？、；;：:~～]+$/u, "")
-    .replace(/\s+/gu, " ");
-}
-
-function matchesStandaloneCategory(
-  value: string,
-  chineseExpressions: ReadonlySet<string>,
-  englishExpressions: ReadonlySet<string>,
-) {
-  const expressions = new Set([
-    ...chineseExpressions,
-    ...englishExpressions,
-  ]);
-
-  if (expressions.has(value)) {
-    return true;
-  }
-
-  const segments = value
-    .split(/[,.!?，。！？、;；:：/|]+/u)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  return (
-    segments.length > 1 &&
-    segments.every((segment) => expressions.has(segment))
-  );
-}
-
-function isExplicitlyOutOfScope(value: string) {
-  return [
-    /^(?:请|麻烦)?(?:给我|帮我)?(?:写|生成|编写)(?:一段|一个|个)?\s*.*(?:代码|程序|脚本)$/u,
-    /^(?:请)?(?:给我|帮我)?(?:讲|说|编)(?:一个|个)?(?:笑话|段子)$/u,
-    /^(?:请|麻烦)?(?:给我|帮我)?(?:写|生成|创作)(?:一首|一篇|个)?\s*(?:诗|故事|文章)$/u,
-    /^(?:please )?(?:tell me|give me) (?:a )?(?:joke|story)$/u,
-    /^(?:please )?(?:write|generate|create)(?: me)? .*(?:code|script|program|poem|story)$/u,
-  ].some((pattern) => pattern.test(value));
-}

@@ -29,7 +29,7 @@ export function createSupabaseGroundedAnswerDependencies(
 ) {
   return createConfiguredDependencies(
     createCandidateRepository(supabase),
-    createCallLogger(supabase),
+    createSupabaseCallLogger(supabase),
   );
 }
 
@@ -39,13 +39,13 @@ export function createPublicSupabaseGroundedAnswerDependencies(
 ) {
   return createConfiguredDependencies(
     createPublicCandidateRepository(supabase, assistantPublicId),
-    createPublicCallLogger(supabase, assistantPublicId),
+    createPublicSupabaseCallLogger(supabase, assistantPublicId),
   );
 }
 
 function createConfiguredDependencies(
   candidateRepository: ReturnType<typeof createCandidateRepository>,
-  callLogger: ReturnType<typeof createCallLogger>,
+  callLogger: ReturnType<typeof createSupabaseCallLogger>,
 ) {
   const embeddingProvider = getKnowledgeEmbeddingProviderWithMetadata();
   const retrievalConfig = readRetrievalConfig();
@@ -158,7 +158,7 @@ function createPublicCandidateRepository(
   };
 }
 
-function createCallLogger(supabase: SupabaseClient) {
+export function createSupabaseCallLogger(supabase: SupabaseClient) {
   return {
     async record(log: AiCallLog) {
       const { error } = await supabase.from("ai_call_logs").insert({
@@ -182,7 +182,7 @@ function createCallLogger(supabase: SupabaseClient) {
   };
 }
 
-function createPublicCallLogger(
+export function createPublicSupabaseCallLogger(
   supabase: SupabaseClient,
   assistantPublicId: string,
 ) {

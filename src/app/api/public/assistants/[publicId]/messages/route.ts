@@ -1,10 +1,13 @@
-import { streamGroundedAnswer } from "@/lib/assistant/grounded-answer";
 import {
   createPublicConversationResponse,
   type PublicConversationBlocked,
   type PublicConversationStart,
 } from "@/lib/assistant/public-conversation";
+import {
+  streamStructuredAssistantResponse,
+} from "@/lib/assistant/request-analysis";
 import { createPublicSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
+import { createPublicSupabaseRequestAnalysisDependencies } from "@/lib/assistant/supabase-request-analysis";
 import { readIntegerServerConfig } from "@/lib/server-config";
 import { createPrivilegedSupabaseClient } from "@/lib/supabase/privileged";
 
@@ -77,17 +80,28 @@ export async function POST(
       return row ? mapConversation(row, conversationId) : null;
     },
     streamAnswer(conversation) {
-      return streamGroundedAnswer(
-        {
-          organizationId: conversation.organizationId,
-          question: conversation.question,
-          context: conversation.context,
-          assistant: conversation.assistant,
-        },
-        createPublicSupabaseGroundedAnswerDependencies(
+      const analysisInput = {
+        organizationId: conversation.organizationId,
+        question: conversation.question,
+        context: conversation.context,
+        assistant: conversation.assistant,
+      };
+      const analysisDependencies =
+        createPublicSupabaseRequestAnalysisDependencies(
           supabase,
           publicId,
-        ),
+        );
+
+      return streamStructuredAssistantResponse(
+        analysisInput,
+        {
+          requestAnalysis: analysisDependencies,
+          groundedAnswer:
+            createPublicSupabaseGroundedAnswerDependencies(
+              supabase,
+              publicId,
+            ),
+        },
       );
     },
     async completeConversation(conversation, outcome, sections) {

@@ -11,6 +11,10 @@ import {
   type AssistantResponseEvent,
   type ConversationContextMessage,
 } from "../../src/lib/assistant/grounded-answer.ts";
+import {
+  streamAnalyzedAssistantResponse,
+  type RequestAnalysis,
+} from "../../src/lib/assistant/request-analysis.ts";
 import type { ResponseSection } from "../../src/lib/assistant/response-sections.ts";
 
 const publicId = "00000000-0000-4000-8000-000000000301";
@@ -169,13 +173,13 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
   ]);
 });
 
-test("公开消息接口流式返回并持久化无引用的澄清提问", async () => {
+test("公开消息接口根据请求分析流式返回并持久化无引用的澄清提问", async () => {
   const result = await runPublicKnowledgeScenario("退款");
 
   assert.deepEqual(result.events, [
     {
       type: "text_delta",
-      delta: "您想了解“退款”的哪一方面？请补充具体问题。",
+      delta: "请补充：想了解退款的具体方面。",
     },
     {
       type: "complete",
@@ -187,15 +191,15 @@ test("公开消息接口流式返回并持久化无引用的澄清提问", async
   assert.deepEqual(result.outcomes, [
     {
       type: "clarification_request",
-      content: "您想了解“退款”的哪一方面？请补充具体问题。",
+      content: "请补充：想了解退款的具体方面。",
       citations: [],
     },
   ]);
-  assert.deepEqual(result.providerCalls, ["embedding"]);
+  assert.deepEqual(result.providerCalls, []);
 });
 
-test("公开消息接口让有充分证据的短主题形成有据回答", async () => {
-  const result = await runPublicKnowledgeScenario("退款", {
+test("公开消息接口让有充分证据的完整短问题形成有据回答", async () => {
+  const result = await runPublicKnowledgeScenario("退款条件是什么？", {
     hasEvidence: true,
   });
 
@@ -279,7 +283,7 @@ test("公开消息接口在澄清后仍无证据时可靠拒答且不连续澄�
   assert.equal(result.outcomes[0]?.type, "grounded_refusal");
 });
 
-test("纯中文问候由服务端形成不调用 AI 的交流性回应", async () => {
+test("纯中文问候由请求分析形成不调用知识链路的交流性回应", async () => {
   const started: Array<{ usesAi: boolean }> = [];
   const outcomes: PublicConversationOutcome[] = [];
   let knowledgeCalls = 0;
@@ -307,19 +311,26 @@ test("纯中文问候由服务端形成不调用 AI 的交流性回应", async (
         started.push({ usesAi });
         return publicConversationStart();
       },
-      streamAnswer() {
-        knowledgeCalls += 1;
-        return answerEvents([
-          {
-            type: "refusal",
-            resultType: "grounded_refusal",
-            message: "不应进入知识链路",
-            contact: {
-              label: "联系业务团队",
-              url: "https://example.com/contact",
-            },
+      streamAnswer(start) {
+        return streamAnalyzedAssistantResponse(start, {
+          async analyzeRequest() {
+            return conversationalAnalysis("greeting", "zh");
           },
-        ]);
+          streamKnowledgeResponse() {
+            knowledgeCalls += 1;
+            return answerEvents([
+              {
+                type: "refusal",
+                resultType: "grounded_refusal",
+                message: "不应进入知识链路",
+                contact: {
+                  label: "联系业务团队",
+                  url: "https://example.com/contact",
+                },
+              },
+            ]);
+          },
+        });
       },
       async completeConversation(_start, outcome) {
         outcomes.push(outcome);
@@ -341,7 +352,7 @@ test("纯中文问候由服务端形成不调用 AI 的交流性回应", async (
       citations: [],
     },
   ]);
-  assert.deepEqual(started, [{ usesAi: false }]);
+  assert.deepEqual(started, [{ usesAi: true }]);
   assert.equal(knowledgeCalls, 0);
   assert.deepEqual(outcomes, [
     {
@@ -366,7 +377,7 @@ test("纯致谢得到使用服务范围的受控交流性回应", async () => {
       citations: [],
     },
   ]);
-  assert.deepEqual(result.usesAi, [false]);
+  assert.deepEqual(result.usesAi, [true]);
   assert.equal(result.knowledgeCalls, 0);
   assert.equal(
     result.outcomes[0]?.type,
@@ -391,7 +402,7 @@ test("明显英文告别得到英文交流性回应", async () => {
       citations: [],
     },
   ]);
-  assert.deepEqual(result.usesAi, [false]);
+  assert.deepEqual(result.usesAi, [true]);
   assert.equal(result.knowledgeCalls, 0);
 });
 
@@ -413,7 +424,7 @@ test("身份询问使用助手名称、服务范围和配置语气", async () =>
       citations: [],
     },
   ]);
-  assert.deepEqual(result.usesAi, [false]);
+  assert.deepEqual(result.usesAi, [true]);
   assert.equal(result.knowledgeCalls, 0);
 });
 
@@ -435,7 +446,7 @@ test("英文能力询问只说明配置的服务范围", async () => {
       citations: [],
     },
   ]);
-  assert.deepEqual(result.usesAi, [false]);
+  assert.deepEqual(result.usesAi, [true]);
   assert.equal(result.knowledgeCalls, 0);
 });
 
@@ -453,7 +464,7 @@ test("明确范围外的代码生成请求只被引导回服务范围", async ()
       citations: [],
     },
   ]);
-  assert.deepEqual(result.usesAi, [false]);
+  assert.deepEqual(result.usesAi, [true]);
   assert.equal(result.knowledgeCalls, 0);
   assert.equal(
     result.outcomes[0]?.content.includes("Python"),
@@ -478,7 +489,7 @@ test("明显英文问候使用英文受控模板", async () => {
       citations: [],
     },
   ]);
-  assert.deepEqual(result.usesAi, [false]);
+  assert.deepEqual(result.usesAi, [true]);
   assert.equal(result.knowledgeCalls, 0);
 });
 
@@ -535,7 +546,7 @@ for (const scenario of [
         citations: [],
       },
     ]);
-    assert.deepEqual(result.usesAi, [false]);
+    assert.deepEqual(result.usesAi, [true]);
     assert.equal(result.knowledgeCalls, 0);
     assert.equal(result.outcomes[0]?.type, "conversational_response");
   });
@@ -572,7 +583,7 @@ for (const scenario of [
         citations: [],
       },
     ]);
-    assert.deepEqual(result.usesAi, [false]);
+    assert.deepEqual(result.usesAi, [true]);
     assert.equal(result.knowledgeCalls, 0);
   });
 }
@@ -605,7 +616,7 @@ for (const question of [
   });
 }
 
-test("服务端分类让交流性回应在 AI 预算耗尽后仍通过公开边界返回", async () => {
+test("请求分析计入 AI 预算且预算耗尽时交流消息也在分析前阻断", async () => {
   const usesAiClassifications: boolean[] = [];
   let knowledgeCalls = 0;
   const dependencies = {
@@ -647,17 +658,17 @@ test("服务端分类让交流性回应在 AI 预算耗尽后仍通过公开边�
     publicId,
     dependencies,
   );
-  assert.deepEqual(await readNdjson(conversationalResponse), [
-    {
-      type: "text_delta",
-      delta: "您好，我是演示业务顾问。您可以咨询演示业务范围。",
+  assert.equal(conversationalResponse.status, 503);
+  assert.deepEqual(await conversationalResponse.json(), {
+    code: "daily_budget",
+    message: "今日 AI 咨询额度已用完，请通过人工联系入口继续咨询。",
+    conversationId,
+    canStartNewConversation: false,
+    contact: {
+      label: "联系业务团队",
+      url: "https://example.com/contact",
     },
-    {
-      type: "complete",
-      resultType: "conversational_response",
-      citations: [],
-    },
-  ]);
+  });
 
   const knowledgeResponse = await createPublicConversationResponse(
     questionRequest("你们提供什么服务？"),
@@ -675,7 +686,7 @@ test("服务端分类让交流性回应在 AI 预算耗尽后仍通过公开边�
       url: "https://example.com/contact",
     },
   });
-  assert.deepEqual(usesAiClassifications, [false, true]);
+  assert.deepEqual(usesAiClassifications, [true, true]);
   assert.equal(knowledgeCalls, 0);
 });
 
@@ -1093,14 +1104,38 @@ async function runPublicKnowledgeScenario(
         };
       },
       streamAnswer(start) {
-        return streamGroundedAnswer(
-          {
-            organizationId: start.organizationId,
-            question: start.question,
-            context: start.context,
-            assistant: start.assistant,
+        return streamAnalyzedAssistantResponse(start, {
+          async analyzeRequest() {
+            return question === "退款"
+              ? {
+                  version: "request-analysis-v1",
+                  language: "zh",
+                  interactionType: "incomplete",
+                  conversationalIntent: null,
+                  factualRequests: [
+                    {
+                      id: "00000000-0000-4000-8000-000000001805",
+                      order: 1,
+                      originalText: question,
+                      normalizedQuestion: question,
+                      completeness: "incomplete",
+                      missingInformation: ["想了解退款的具体方面"],
+                    },
+                  ],
+                }
+              : factualAnalysis(question);
           },
-          {
+          streamKnowledgeResponse(analysis) {
+            return streamGroundedAnswer(
+              {
+                organizationId: start.organizationId,
+                question:
+                  analysis.factualRequests[0]?.normalizedQuestion ??
+                  start.question,
+                context: start.context,
+                assistant: start.assistant,
+              },
+              {
             questionEmbeddingProvider: {
               provider: "test",
               model: "embedding",
@@ -1171,8 +1206,10 @@ async function runPublicKnowledgeScenario(
               evidenceLimit: 5,
               evidenceThreshold: 0.85,
             },
+              },
+            );
           },
-        );
+        });
       },
       async completeConversation(_start, outcome) {
         outcomes.push(outcome);
@@ -1243,19 +1280,26 @@ async function runRoutedQuestion(
           },
         };
       },
-      streamAnswer() {
-        knowledgeCalls += 1;
-        return answerEvents([
-          {
-            type: "refusal",
-            resultType: "grounded_refusal",
-            message: "知识链路结果",
-            contact: {
-              label: "联系业务团队",
-              url: "https://example.com/contact",
-            },
+      streamAnswer(start) {
+        return streamAnalyzedAssistantResponse(start, {
+          async analyzeRequest() {
+            return analysisForTestQuestion(question);
           },
-        ]);
+          streamKnowledgeResponse() {
+            knowledgeCalls += 1;
+            return answerEvents([
+              {
+                type: "refusal",
+                resultType: "grounded_refusal",
+                message: "知识链路结果",
+                contact: {
+                  label: "联系业务团队",
+                  url: "https://example.com/contact",
+                },
+              },
+            ]);
+          },
+        });
       },
       async completeConversation(_start, outcome) {
         outcomes.push(outcome);
@@ -1271,6 +1315,79 @@ async function runRoutedQuestion(
     knowledgeCalls,
     outcomes,
     usesAi,
+  };
+}
+
+function analysisForTestQuestion(question: string): RequestAnalysis {
+  const conversational = new Map<
+    string,
+    {
+      intent: NonNullable<RequestAnalysis["conversationalIntent"]>;
+      language: RequestAnalysis["language"];
+    }
+  >([
+    ["谢谢", { intent: "gratitude", language: "zh" }],
+    ["Goodbye!", { intent: "farewell", language: "en" }],
+    ["你是谁？", { intent: "identity", language: "zh" }],
+    ["What can you do?", { intent: "capability", language: "en" }],
+    [
+      "请给我写一段 Python 代码",
+      { intent: "out_of_scope", language: "zh" },
+    ],
+    ["Hello!", { intent: "greeting", language: "en" }],
+    ["再见", { intent: "farewell", language: "zh" }],
+    ["Thank you", { intent: "gratitude", language: "en" }],
+    ["Who are you?", { intent: "identity", language: "en" }],
+    ["你能做什么？", { intent: "capability", language: "zh" }],
+    [
+      "Please write me some Python code",
+      { intent: "out_of_scope", language: "en" },
+    ],
+    ["Hi，你好", { intent: "greeting", language: "zh" }],
+    ["谢谢，thanks", { intent: "gratitude", language: "zh" }],
+    ["Hi! 你好", { intent: "greeting", language: "zh" }],
+  ]);
+  const match = conversational.get(question);
+
+  return match
+    ? conversationalAnalysis(match.intent, match.language)
+    : factualAnalysis(question);
+}
+
+function conversationalAnalysis(
+  conversationalIntent: NonNullable<
+    RequestAnalysis["conversationalIntent"]
+  >,
+  language: RequestAnalysis["language"],
+): RequestAnalysis {
+  return {
+    version: "request-analysis-v1",
+    language,
+    interactionType: "conversational",
+    conversationalIntent,
+    factualRequests: [],
+  };
+}
+
+function factualAnalysis(question: string): RequestAnalysis {
+  return {
+    version: "request-analysis-v1",
+    language: /[A-Za-z]/u.test(question) &&
+        !/\p{Script=Han}/u.test(question)
+      ? "en"
+      : "zh",
+    interactionType: "factual",
+    conversationalIntent: null,
+    factualRequests: [
+      {
+        id: "00000000-0000-4000-8000-000000001806",
+        order: 1,
+        originalText: question,
+        normalizedQuestion: question,
+        completeness: "complete",
+        missingInformation: [],
+      },
+    ],
   };
 }
 

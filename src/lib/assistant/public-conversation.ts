@@ -1,9 +1,5 @@
 import { createAssistantPreviewResponse } from "./preview-response.ts";
 import type { ConversationResultType } from "./conversation-result.ts";
-import {
-  routeConversationInput,
-  streamRoutedAssistantResponse,
-} from "./conversational-response.ts";
 import type {
   AssistantResponseEvent,
   ConversationContextMessage,
@@ -90,13 +86,12 @@ export async function createPublicConversationResponse(
     );
   }
 
-  const inputRoute = routeConversationInput(questionResult.question);
   const conversation = await dependencies.beginConversation(
     publicId,
     questionResult.question,
     questionResult.conversationId,
     questionResult.retry,
-    inputRoute.type === "knowledge",
+    true,
   );
 
   if (!conversation) {
@@ -118,15 +113,9 @@ export async function createPublicConversationResponse(
     );
   }
 
-  const events = streamRoutedAssistantResponse({
+  const events = dependencies.streamAnswer({
+    ...conversation,
     question: questionResult.question,
-    route: inputRoute,
-    assistant: conversation.assistant,
-    streamKnowledgeAnswer: () =>
-      dependencies.streamAnswer({
-        ...conversation,
-        question: questionResult.question,
-      }),
   });
   const sectionEvents = streamSingleSectionResponse(
     events,

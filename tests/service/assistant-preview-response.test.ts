@@ -6,9 +6,8 @@ import {
   streamGroundedAnswer,
 } from "../../src/lib/assistant/grounded-answer.ts";
 import {
-  routeConversationInput,
-  streamRoutedAssistantResponse,
-} from "../../src/lib/assistant/conversational-response.ts";
+  streamAnalyzedAssistantResponse,
+} from "../../src/lib/assistant/request-analysis.ts";
 import { createAssistantPreviewResponse } from "../../src/lib/assistant/preview-response.ts";
 import { streamSingleSectionResponse } from "../../src/lib/assistant/response-sections.ts";
 
@@ -17,29 +16,42 @@ test("预览 HTTP 流对高置信交流输入使用受控回应且不调用知�
   const question = "Hello!";
   const response = createAssistantPreviewResponse(
     streamSingleSectionResponse(
-      streamRoutedAssistantResponse({
-        question,
-        route: routeConversationInput(question),
-        assistant: {
-          name: "Demo Advisor",
-          serviceScope: "account services",
-          tone: "professional",
+      streamAnalyzedAssistantResponse(
+        {
+          organizationId: "organization-1",
+          question,
+          assistant: {
+            name: "Demo Advisor",
+            serviceScope: "account services",
+            tone: "professional",
+          },
         },
-        streamKnowledgeAnswer: () => {
-          knowledgeCalls += 1;
-          return (async function* () {
-            yield {
-              type: "refusal" as const,
-              resultType: "grounded_refusal" as const,
-              message: "This knowledge path must not run.",
-              contact: {
-                label: "Contact us",
-                url: "https://example.com/contact",
-              },
+        {
+          async analyzeRequest() {
+            return {
+              version: "request-analysis-v1",
+              language: "en",
+              interactionType: "conversational",
+              conversationalIntent: "greeting",
+              factualRequests: [],
             };
-          })();
+          },
+          streamKnowledgeResponse() {
+            knowledgeCalls += 1;
+            return (async function* () {
+              yield {
+                type: "refusal" as const,
+                resultType: "grounded_refusal" as const,
+                message: "This knowledge path must not run.",
+                contact: {
+                  label: "Contact us",
+                  url: "https://example.com/contact",
+                },
+              };
+            })();
+          },
         },
-      }),
+      ),
       "00000000-0000-4000-8000-000000001801",
     ),
     {
@@ -94,7 +106,7 @@ test("预览 HTTP 流对高置信交流输入使用受控回应且不调用知�
   assert.equal(knowledgeCalls, 0);
 });
 
-test("预览 HTTP 流在知识检索无证据时展示普通澄清提问", async () => {
+test("预览 HTTP 流由请求分析缺失信息展示普通澄清提问", async () => {
   const question = "退款";
   const assistant = {
     name: "演示业务顾问",
@@ -106,59 +118,82 @@ test("预览 HTTP 流在知识检索无证据时展示普通澄清提问", async
   const providerCalls: string[] = [];
   const response = createAssistantPreviewResponse(
     streamSingleSectionResponse(
-      streamRoutedAssistantResponse({
-        question,
-        route: routeConversationInput(question),
-        assistant,
-        streamKnowledgeAnswer: () =>
-          streamGroundedAnswer(
-            {
-              organizationId: "organization-1",
-              question,
-              assistant,
-            },
-            {
-              questionEmbeddingProvider: {
-                provider: "test",
-                model: "embedding",
-                async embed() {
-                  providerCalls.push("embedding");
-                  return previewProviderResult(
-                    [0.1, 0.2],
-                    "embedding-trace",
-                  );
+      streamAnalyzedAssistantResponse(
+        {
+          organizationId: "organization-1",
+          question,
+          assistant,
+        },
+        {
+          async analyzeRequest() {
+            return {
+              version: "request-analysis-v1",
+              language: "zh",
+              interactionType: "incomplete",
+              conversationalIntent: null,
+              factualRequests: [
+                {
+                  id: "00000000-0000-4000-8000-000000001803",
+                  order: 1,
+                  originalText: "退款",
+                  normalizedQuestion: "退款",
+                  completeness: "incomplete",
+                  missingInformation: ["想了解退款的具体方面"],
+                },
+              ],
+            };
+          },
+          streamKnowledgeResponse() {
+            return streamGroundedAnswer(
+              {
+                organizationId: "organization-1",
+                question,
+                assistant,
+              },
+              {
+                questionEmbeddingProvider: {
+                  provider: "test",
+                  model: "embedding",
+                  async embed() {
+                    providerCalls.push("embedding");
+                    return previewProviderResult(
+                      [0.1, 0.2],
+                      "embedding-trace",
+                    );
+                  },
+                },
+                candidateRepository: {
+                  async retrieve() {
+                    return [];
+                  },
+                },
+                rerankingProvider: {
+                  provider: "test",
+                  model: "rerank",
+                  async rerank() {
+                    assert.fail("无候选证据时不应重排");
+                  },
+                },
+                answerProvider: {
+                  provider: "test",
+                  model: "answer",
+                  streamAnswer() {
+                    assert.fail("澄清提问不应调用回答模型");
+                  },
+                },
+                callLogger: {
+                  async record() {},
+                },
+                config: {
+                  candidateLimit: 20,
+                  evidenceLimit: 5,
+                  evidenceThreshold: 0.85,
                 },
               },
-              candidateRepository: {
-                async retrieve() {
-                  return [];
-                },
-              },
-              rerankingProvider: {
-                provider: "test",
-                model: "rerank",
-                async rerank() {
-                  assert.fail("无候选证据时不应重排");
-                },
-              },
-              answerProvider: {
-                provider: "test",
-                model: "answer",
-                streamAnswer() {
-                  assert.fail("澄清提问不应调用回答模型");
-                },
-              },
-              callLogger: {
-                async record() {},
-              },
-              config: {
-                candidateLimit: 20,
-                evidenceLimit: 5,
-                evidenceThreshold: 0.85,
-              },
-            },
-          ),
-      }),
+            );
+          },
+        },
+      ),
       "00000000-0000-4000-8000-000000001802",
     ),
     {
@@ -179,7 +214,7 @@ test("预览 HTTP 流在知识检索无证据时展示普通澄清提问", async
     {
       type: "section_delta",
       sectionId: "00000000-0000-4000-8000-000000001802",
-      delta: "您想了解“退款”的哪一方面？请补充具体问题。",
+      delta: "请补充：想了解退款的具体方面。",
     },
     {
       type: "section_complete",
@@ -187,7 +222,7 @@ test("预览 HTTP 流在知识检索无证据时展示普通澄清提问", async
         id: "00000000-0000-4000-8000-000000001802",
         order: 1,
         status: "clarification",
-        content: "您想了解“退款”的哪一方面？请补充具体问题。",
+        content: "请补充：想了解退款的具体方面。",
         citations: [],
       },
     },
@@ -199,13 +234,13 @@ test("预览 HTTP 流在知识检索无证据时展示普通澄清提问", async
           id: "00000000-0000-4000-8000-000000001802",
           order: 1,
           status: "clarification",
-          content: "您想了解“退款”的哪一方面？请补充具体问题。",
+          content: "请补充：想了解退款的具体方面。",
           citations: [],
         },
       ],
     },
   ]);
-  assert.deepEqual(providerCalls, ["embedding"]);
+  assert.deepEqual(providerCalls, []);
 });
 
 test("预览 HTTP 流将供应商超时映射为可重试技术故障而非可靠拒答", async () => {

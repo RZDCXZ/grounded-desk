@@ -327,7 +327,7 @@ test("事实性追问使用近期访客问题重新检索且历史助手回答�
   ]);
 });
 
-test("残缺主题在检索无候选证据后形成一次受控澄清提问", async () => {
+test("检索层不再根据主题白名单决定澄清", async () => {
   const input = happyPathInput();
   const dependencies = createHappyPathDependencies();
   input.question = "退款？";
@@ -345,19 +345,19 @@ test("残缺主题在检索无候选证据后形成一次受控澄清提问", as
     ),
     [
       {
-        type: "text_delta",
-        delta: "您想了解“退款”的哪一方面？请补充具体问题。",
-      },
-      {
-        type: "complete",
-        resultType: "clarification_request",
-        citations: [],
+        type: "refusal",
+        resultType: "grounded_refusal",
+        message: "当前可用知识不足以支持这个问题的事实性回答。",
+        contact: {
+          label: "联系业务团队",
+          url: "https://example.com/contact",
+        },
       },
     ],
   );
 });
 
-test("残缺主题在重排后没有最终证据时形成澄清提问", async () => {
+test("重排结果不再通过主题白名单触发澄清", async () => {
   const input = happyPathInput();
   const dependencies = createHappyPathDependencies();
   input.question = "价格方面";
@@ -374,19 +374,19 @@ test("残缺主题在重排后没有最终证据时形成澄清提问", async ()
     ),
     [
       {
-        type: "text_delta",
-        delta: "您想了解“价格方面”的哪一方面？请补充具体问题。",
-      },
-      {
-        type: "complete",
-        resultType: "clarification_request",
-        citations: [],
+        type: "refusal",
+        resultType: "grounded_refusal",
+        message: "当前可用知识不足以支持这个问题的事实性回答。",
+        contact: {
+          label: "联系业务团队",
+          url: "https://example.com/contact",
+        },
       },
     ],
   );
 });
 
-test("明显英文残缺主题在证据不足时使用英文澄清模板", async () => {
+test("检索层的英文证据不足结果保持可靠拒答", async () => {
   const input = happyPathInput();
   const dependencies = createHappyPathDependencies();
   input.question = "refund";
@@ -398,14 +398,14 @@ test("明显英文残缺主题在证据不足时使用英文澄清模板", async
     ),
     [
       {
-        type: "text_delta",
-        delta:
-          "What would you like to know about “refund”? Please add a specific question.",
-      },
-      {
-        type: "complete",
-        resultType: "clarification_request",
-        citations: [],
+        type: "refusal",
+        resultType: "grounded_refusal",
+        message:
+          "The currently available knowledge is insufficient to support a factual answer to this question.",
+        contact: {
+          label: "联系业务团队",
+          url: "https://example.com/contact",
+        },
       },
     ],
   );
@@ -541,7 +541,7 @@ test("上一轮已澄清时再次证据不足会可靠拒答而非连续澄清",
   );
 });
 
-test("已有非澄清结果会重置连续澄清状态", async () => {
+test("检索层不再读取历史结果决定澄清状态", async () => {
   const input = happyPathInput();
   const dependencies = createHappyPathDependencies();
   input.question = "退款";
@@ -572,14 +572,17 @@ test("已有非澄清结果会重置连续澄清状态", async () => {
   const events = await collectAssistantEvents(
     streamGroundedAnswer(input, dependencies),
   );
-  const completion = events.at(-1);
-
-  assert.equal(
-    completion?.type === "complete"
-      ? completion.resultType
-      : null,
-    "clarification_request",
-  );
+  assert.deepEqual(events, [
+    {
+      type: "refusal",
+      resultType: "grounded_refusal",
+      message: "当前可用知识不足以支持这个问题的事实性回答。",
+      contact: {
+        label: "联系业务团队",
+        url: "https://example.com/contact",
+      },
+    },
+  ]);
 });
 
 test("供应商失败会记录安全错误类型和追踪信息且不会保存正文", async () => {

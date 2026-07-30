@@ -1,11 +1,10 @@
-import { streamGroundedAnswer } from "@/lib/assistant/grounded-answer";
-import {
-  routeConversationInput,
-  streamRoutedAssistantResponse,
-} from "@/lib/assistant/conversational-response";
 import { createAssistantPreviewResponse } from "@/lib/assistant/preview-response";
+import {
+  streamStructuredAssistantResponse,
+} from "@/lib/assistant/request-analysis";
 import { streamSingleSectionResponse } from "@/lib/assistant/response-sections";
 import { createSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
+import { createSupabaseRequestAnalysisDependencies } from "@/lib/assistant/supabase-request-analysis";
 import { requireAdministrator } from "@/lib/auth/require-admin";
 
 const MAXIMUM_QUESTION_LENGTH = 2_000;
@@ -44,23 +43,24 @@ export async function POST(request: Request) {
     humanContactUrl: assistant.human_contact_url,
   };
   const question = questionResult.question;
+  const analysisInput = {
+    organizationId: organization.id,
+    question,
+    assistant: assistantConfiguration,
+  };
+  const analysisDependencies =
+    createSupabaseRequestAnalysisDependencies(supabase);
 
   return createAssistantPreviewResponse(
     streamSingleSectionResponse(
-      streamRoutedAssistantResponse({
-        question,
-        route: routeConversationInput(question),
-        assistant: assistantConfiguration,
-        streamKnowledgeAnswer: () =>
-          streamGroundedAnswer(
-            {
-              organizationId: organization.id,
-              question,
-              assistant: assistantConfiguration,
-            },
+      streamStructuredAssistantResponse(
+        analysisInput,
+        {
+          requestAnalysis: analysisDependencies,
+          groundedAnswer:
             createSupabaseGroundedAnswerDependencies(supabase),
-          ),
-      }),
+        },
+      ),
       crypto.randomUUID(),
     ),
     {
