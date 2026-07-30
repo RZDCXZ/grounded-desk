@@ -1,6 +1,6 @@
 begin;
 
-select plan(18);
+select plan(23);
 
 select results_eq(
   $$ select count(*)::integer from public.organizations $$,
@@ -18,6 +18,64 @@ select results_eq(
   $$ select count(*)::integer from public.assistants where status = 'draft' $$,
   array[1],
   'seed creates one draft assistant'
+);
+
+select results_eq(
+  $$
+    select count(*)::integer
+    from public.knowledge_sources
+    where organization_id = '00000000-0000-4000-8000-000000000101'
+      and id::text like '10000000-0000-4000-8000-0000000003__'
+      and status = 'available'
+      and enabled
+  $$,
+  array[5],
+  'seed creates five available demonstration knowledge sources'
+);
+
+select results_eq(
+  $$
+    select count(*)::integer
+    from public.knowledge_sources as source
+    join public.knowledge_revisions as revision
+      on revision.id = source.current_revision_id
+      and revision.organization_id = source.organization_id
+      and revision.knowledge_source_id = source.id
+    where source.organization_id = '00000000-0000-4000-8000-000000000101'
+      and source.id::text like '10000000-0000-4000-8000-0000000003__'
+      and revision.status = 'available'
+  $$,
+  array[5],
+  'every seeded knowledge source points to an available revision'
+);
+
+select results_eq(
+  $$
+    select count(*)::integer
+    from public.content_units
+    where organization_id = '00000000-0000-4000-8000-000000000101'
+      and id::text like '10000000-0000-4000-8000-0000000005__'
+  $$,
+  array[20],
+  'seed creates twenty independently retrievable content units'
+);
+
+select results_eq(
+  $$
+    select count(distinct heading)::integer
+    from public.content_units
+    where organization_id = '00000000-0000-4000-8000-000000000101'
+      and id::text like '10000000-0000-4000-8000-0000000005__'
+      and heading in (
+        '产品定位',
+        '支持的知识来源',
+        '网站接入',
+        '演示费用',
+        '数据保留与删除'
+      )
+  $$,
+  array[5],
+  'seed covers common product, ingestion, embed, pricing, and privacy questions'
 );
 
 select ok(
@@ -86,6 +144,23 @@ select results_eq(
   $$ select status from public.assistants $$,
   array['draft'],
   'administrator can read the seeded assistant'
+);
+
+select results_eq(
+  $$
+    select count(*)::integer
+    from public.retrieve_available_content_units(
+      array_fill(
+        -1::real,
+        array[1024]
+      )::extensions.vector(1024),
+      100
+    )
+    where content_unit_id::text
+      like '10000000-0000-4000-8000-0000000005__'
+  $$,
+  array[20],
+  'administrator can retrieve all seeded content units as answer candidates'
 );
 
 select set_config(
