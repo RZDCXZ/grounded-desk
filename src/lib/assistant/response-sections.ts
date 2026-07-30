@@ -1,7 +1,12 @@
 import type {
   AssistantResponseEvent as LegacyAssistantResponseEvent,
+  AuditedAssistantResponseEvent,
   GroundedCitation,
 } from "./grounded-answer.ts";
+import {
+  responseDecisionAuditSymbol,
+  type ResponseDecisionAudit,
+} from "./response-decision-audit.ts";
 import type { ConversationResultType } from "./conversation-result.ts";
 
 export type ResponseSectionStatus =
@@ -45,6 +50,11 @@ export type SectionedAssistantResponseEvent =
       resultType: ConversationResultType;
       sections: ResponseSection[];
     };
+
+export type AuditedSectionedAssistantResponseEvent =
+  SectionedAssistantResponseEvent & {
+    [responseDecisionAuditSymbol]?: ResponseDecisionAudit;
+  };
 
 type AssistantResponsePresentationState = {
   answer: string;
@@ -171,11 +181,11 @@ export async function* streamSingleSectionResponse(
         type: "section_complete",
         section,
       };
-      yield {
+      yield attachDecisionAudit({
         type: "message_complete",
         resultType: event.resultType,
         sections: [section],
-      };
+      }, event);
       return;
     }
 
@@ -191,15 +201,31 @@ export async function* streamSingleSectionResponse(
       type: "section_complete",
       section,
     };
-    yield {
+    yield attachDecisionAudit({
       type: "message_complete",
       resultType: event.resultType,
       sections: [section],
-    };
+    }, event);
     return;
   }
 
   throw new Error("单项回答流缺少完成事件");
+}
+
+function attachDecisionAudit(
+  sectionEvent: SectionedAssistantResponseEvent,
+  legacyEvent: LegacyAssistantResponseEvent,
+) {
+  const audit = (legacyEvent as AuditedAssistantResponseEvent)[
+    responseDecisionAuditSymbol
+  ];
+  if (audit) {
+    Object.defineProperty(sectionEvent, responseDecisionAuditSymbol, {
+      value: audit,
+      enumerable: false,
+    });
+  }
+  return sectionEvent;
 }
 
 const completionStatus = {

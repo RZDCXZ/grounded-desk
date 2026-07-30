@@ -64,15 +64,9 @@ async function runLiveAiSmoke() {
     },
     evidence: [
       {
-        id: "live-smoke-unit",
         contentUnitId: "live-smoke-unit",
-        knowledgeSourceId: "live-smoke-source",
-        sourceTitle: "真实 AI 冒烟固定依据",
-        sourceUrl: null,
-        heading: "回答边界",
-        content: "GroundedDesk 只根据已维护的知识来源生成有据回答。",
-        similarity: 1,
-        rerankScore: 1,
+        exactExcerpt:
+          "GroundedDesk 只根据已维护的知识来源生成有据回答。",
       },
     ],
   });

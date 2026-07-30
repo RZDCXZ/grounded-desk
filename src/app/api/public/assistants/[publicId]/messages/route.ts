@@ -85,6 +85,7 @@ export async function POST(
         question: conversation.question,
         context: conversation.context,
         assistant: conversation.assistant,
+        factualRequestId: conversation.factualRequestId,
       };
       const analysisDependencies =
         createPublicSupabaseRequestAnalysisDependencies(
@@ -104,14 +105,17 @@ export async function POST(
         },
       );
     },
-    async completeConversation(conversation, outcome, sections) {
+    async completeConversation(conversation, outcome, sections, audit) {
       const { error } = await supabase.rpc(
-        "complete_public_conversation_sections",
+        audit
+          ? "complete_public_single_request_decision"
+          : "complete_public_conversation_sections",
         {
           assistant_public_id: publicId,
           target_conversation_id: conversation.conversationId,
           result_type: outcome.type,
           result_sections: sections,
+          ...(audit ? { response_decision: audit } : {}),
         },
       );
 

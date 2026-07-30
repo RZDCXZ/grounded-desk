@@ -174,6 +174,19 @@ test("预览 HTTP 流由请求分析缺失信息展示普通澄清提问", async
                     assert.fail("无候选证据时不应重排");
                   },
                 },
+                evidenceCoverageProvider: {
+                  provider: "test",
+                  model: "coverage",
+                  async decide() {
+                    return previewProviderResult(
+                      {
+                        status: "unsupported",
+                        evidence: [],
+                      },
+                      "coverage-trace",
+                    );
+                  },
+                },
                 answerProvider: {
                   provider: "test",
                   model: "answer",
@@ -187,7 +200,7 @@ test("预览 HTTP 流由请求分析缺失信息展示普通澄清提问", async
                 config: {
                   candidateLimit: 20,
                   evidenceLimit: 5,
-                  evidenceThreshold: 0.85,
+                  rerankNoiseFloor: 0.05,
                 },
               },
             );

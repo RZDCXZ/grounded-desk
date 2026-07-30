@@ -10,6 +10,7 @@ import {
   streamGroundedAnswer,
   type AssistantResponseEvent,
   type ConversationContextMessage,
+  type ResponseDecisionAudit,
 } from "../../src/lib/assistant/grounded-answer.ts";
 import {
   streamAnalyzedAssistantResponse,
@@ -26,7 +27,9 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
     question: string;
     usesAi: boolean;
   }> = [];
-  const answerInputs: PublicConversationStart[] = [];
+  const answerInputs: Array<
+    PublicConversationStart & { factualRequestId: string }
+  > = [];
   const outcomes: PublicConversationOutcome[] = [];
   const completedSections: ResponseSection[][] = [];
   const response = await createPublicConversationResponse(
@@ -97,12 +100,16 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
       usesAi: true,
     },
   ]);
-  assert.deepEqual(answerInputs, [
-    {
-      ...publicConversationStart(),
-      question: "你们提供什么服务？",
-    },
-  ]);
+  assert.equal(answerInputs.length, 1);
+  assert.deepEqual(answerInputs[0], {
+    ...publicConversationStart(),
+    question: "你们提供什么服务？",
+    factualRequestId: answerInputs[0]?.factualRequestId,
+  });
+  assert.match(
+    answerInputs[0]?.factualRequestId ?? "",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+  );
   const rawEvents = await readRawNdjson(response);
   const sectionId = (
     rawEvents.find(({ type }) => type === "section_start") as {
@@ -206,9 +213,15 @@ test("公开消息接口让有充分证据的完整短问题形成有据回答",
   assert.deepEqual(result.providerCalls, [
     "embedding",
     "rerank",
+    "coverage",
     "answer",
   ]);
   assert.equal(result.outcomes[0]?.type, "grounded_answer");
+  assert.equal(result.audits[0]?.coverage.status, "supported");
+  assert.match(
+    result.audits[0]?.factualRequest.id ?? "",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+  );
   assert.deepEqual(result.events, [
     {
       type: "text_delta",
@@ -243,6 +256,20 @@ test("公开消息接口让证据不足的完整短问题形成可靠拒答", as
     },
   ]);
   assert.equal(result.outcomes[0]?.type, "grounded_refusal");
+  assert.equal(result.audits[0]?.coverage.status, "unsupported");
+});
+
+test("多事实诉求在逐项编排落地前不错误绑定单项审计身份", async () => {
+  const result = await runPublicKnowledgeScenario(
+    "退款多久到账，也可以开发票吗？",
+    {
+      hasEvidence: true,
+      multipleFactualRequests: true,
+    },
+  );
+
+  assert.equal(result.outcomes[0]?.type, "grounded_answer");
+  assert.deepEqual(result.audits, []);
 });
 
 test("公开消息接口在澄清后结合近期上下文重新检索成功", async () => {
@@ -697,7 +724,10 @@ test("公开消息接口在同一会话中传递有限近期上下文并返回�
     conversationId?: string;
   }> = [];
   const answerInputs: Array<
-    PublicConversationStart & { question: string }
+    PublicConversationStart & {
+      question: string;
+      factualRequestId: string;
+    }
   > = [];
   const response = await createPublicConversationResponse(
     new Request("http://localhost/api/public/assistants/id/messages", {
@@ -770,6 +800,7 @@ test("公开消息接口在同一会话中传递有限近期上下文并返回�
         },
       ],
       question: "它包含实施支持吗？",
+      factualRequestId: answerInputs[0]?.factualRequestId,
     },
   ]);
   await response.text();
@@ -1080,10 +1111,12 @@ async function runPublicKnowledgeScenario(
   options: {
     context?: ConversationContextMessage[];
     hasEvidence?: boolean;
+    multipleFactualRequests?: boolean;
   } = {},
 ) {
   const embeddingQuestions: string[] = [];
   const outcomes: PublicConversationOutcome[] = [];
+  const audits: ResponseDecisionAudit[] = [];
   const providerCalls: string[] = [];
   const usesAi: boolean[] = [];
   const response = await createPublicConversationResponse(
@@ -1123,7 +1156,31 @@ async function runPublicKnowledgeScenario(
                     },
                   ],
                 }
-              : factualAnalysis(question);
+              : options.multipleFactualRequests
+                ? {
+                    ...factualAnalysis(question),
+                    factualRequests: [
+                      {
+                        id:
+                          "00000000-0000-4000-8000-000000001806",
+                        order: 1,
+                        originalText: "退款多久到账？",
+                        normalizedQuestion: "退款多久到账？",
+                        completeness: "complete",
+                        missingInformation: [],
+                      },
+                      {
+                        id:
+                          "00000000-0000-4000-8000-000000001807",
+                        order: 2,
+                        originalText: "可以开发票吗？",
+                        normalizedQuestion: "可以开发票吗？",
+                        completeness: "complete",
+                        missingInformation: [],
+                      },
+                    ],
+                  }
+                : factualAnalysis(question);
           },
           streamKnowledgeResponse(analysis) {
             return streamGroundedAnswer(
@@ -1134,6 +1191,18 @@ async function runPublicKnowledgeScenario(
                   start.question,
                 context: start.context,
                 assistant: start.assistant,
+                factualRequest:
+                  analysis.factualRequests.length === 1 &&
+                    analysis.factualRequests[0]
+                    ? {
+                        id: start.factualRequestId,
+                        originalText:
+                          analysis.factualRequests[0].originalText,
+                        normalizedQuestion:
+                          analysis.factualRequests[0].normalizedQuestion,
+                        requestAnalysisVersion: analysis.version,
+                      }
+                    : undefined,
               },
               {
             questionEmbeddingProvider: {
@@ -1154,6 +1223,7 @@ async function runPublicKnowledgeScenario(
                   ? [
                       {
                         id: "unit-refund",
+                        organizationId: start.organizationId,
                         knowledgeSourceId: "source-refund",
                         sourceTitle: "退款说明",
                         sourceUrl: "https://example.com/refunds",
@@ -1181,6 +1251,30 @@ async function runPublicKnowledgeScenario(
                 );
               },
             },
+            evidenceCoverageProvider: {
+              provider: "test",
+              model: "coverage",
+              async decide({ candidates }) {
+                providerCalls.push("coverage");
+                return publicProviderResult(
+                  options.hasEvidence
+                    ? {
+                        status: "supported",
+                        evidence: candidates.map((candidate) => ({
+                          contentUnitId: candidate.id,
+                          relationship: "supports",
+                          exactExcerpt: candidate.content,
+                          reason: "测试候选直接支持诉求。",
+                        })),
+                      }
+                    : {
+                        status: "unsupported",
+                        evidence: [],
+                      },
+                  "coverage-trace",
+                );
+              },
+            },
             answerProvider: {
               provider: "test",
               model: "answer",
@@ -1204,15 +1298,18 @@ async function runPublicKnowledgeScenario(
             config: {
               candidateLimit: 20,
               evidenceLimit: 5,
-              evidenceThreshold: 0.85,
+              rerankNoiseFloor: 0.05,
             },
               },
             );
           },
         });
       },
-      async completeConversation(_start, outcome) {
+      async completeConversation(_start, outcome, _sections, audit) {
         outcomes.push(outcome);
+        if (audit) {
+          audits.push(audit);
+        }
       },
       async failConversation() {
         assert.fail("知识场景不应保存为技术故障");
@@ -1222,6 +1319,7 @@ async function runPublicKnowledgeScenario(
 
   return {
     embeddingQuestions,
+    audits,
     events: await readNdjson(response),
     outcomes,
     providerCalls,

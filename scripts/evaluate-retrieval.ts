@@ -19,7 +19,7 @@ function printSummary(summary: Awaited<ReturnType<typeof runRetrievalEvaluation>
   process.stdout.write(
     [
       "GroundedDesk 检索离线评测",
-      `配置：召回 ${config.candidateLimit}，重排保留 ${config.evidenceLimit}，相关性阈值 ${config.evidenceThreshold}`,
+      `配置：召回 ${config.candidateLimit}，重排保留 ${config.evidenceLimit}，重排噪声下限 ${config.rerankNoiseFloor}`,
       `数据集：${dataset.total} 题（应答 ${dataset.answerable}，拒答 ${dataset.refusal}；中文 ${dataset.languages.zh}，英文 ${dataset.languages.en}）`,
       `结果：${outcomes.correct}/${dataset.total} 通过，通过率 ${(outcomes.passRate * 100).toFixed(1)}%`,
       `有据回答 ${outcomes.groundedAnswers}｜可靠拒答 ${outcomes.groundedRefusals}｜澄清 ${outcomes.clarifications}`,

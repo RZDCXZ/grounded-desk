@@ -82,6 +82,7 @@ type StructuredAssistantResponseInput = Omit<
   "assistant"
 > & {
   assistant: GroundedAnswerInput["assistant"];
+  factualRequestId?: string;
 };
 
 export async function analyzeAssistantRequest(
@@ -222,6 +223,15 @@ export function streamStructuredAssistantResponse(
             analysis.factualRequests.length === 1 && request
               ? request.normalizedQuestion
               : input.question,
+          factualRequest:
+            analysis.factualRequests.length === 1 && request
+            ? {
+                id: input.factualRequestId ?? request.id,
+                originalText: request.originalText,
+                normalizedQuestion: request.normalizedQuestion,
+                requestAnalysisVersion: analysis.version,
+              }
+            : undefined,
         },
         dependencies.groundedAnswer,
       );

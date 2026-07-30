@@ -7,7 +7,12 @@ import type {
 } from "./grounded-answer.ts";
 import { detectQuestionLanguage } from "./question-language.ts";
 import {
+  responseDecisionAuditSymbol,
+  type ResponseDecisionAudit,
+} from "./response-decision-audit.ts";
+import {
   streamSingleSectionResponse,
+  type AuditedSectionedAssistantResponseEvent,
   type ResponseSection,
   type SectionedAssistantResponseEvent,
 } from "./response-sections.ts";
@@ -62,12 +67,16 @@ type PublicConversationDependencies = {
     PublicConversationStart | PublicConversationBlocked | null
   >;
   streamAnswer(
-    start: PublicConversationStart & { question: string },
+    start: PublicConversationStart & {
+      question: string;
+      factualRequestId: string;
+    },
   ): AsyncIterable<AssistantResponseEvent>;
   completeConversation(
     start: PublicConversationStart,
     outcome: PublicConversationOutcome,
     sections: ResponseSection[],
+    audit?: ResponseDecisionAudit,
   ): Promise<void>;
   failConversation(start: PublicConversationStart): Promise<void>;
 };
@@ -113,13 +122,15 @@ export async function createPublicConversationResponse(
     );
   }
 
+  const factualRequestId = crypto.randomUUID();
   const events = dependencies.streamAnswer({
     ...conversation,
     question: questionResult.question,
+    factualRequestId,
   });
   const sectionEvents = streamSingleSectionResponse(
     events,
-    crypto.randomUUID(),
+    factualRequestId,
   );
   const response = createAssistantPreviewResponse(
     persistConversationOutcome(
@@ -214,11 +225,18 @@ async function* persistConversationOutcome(
         const citations = event.sections.flatMap(
           (section) => section.citations,
         );
-        await dependencies.completeConversation(conversation, {
-          type: event.resultType,
-          content,
-          citations,
-        }, event.sections);
+        await dependencies.completeConversation(
+          conversation,
+          {
+            type: event.resultType,
+            content,
+            citations,
+          },
+          event.sections,
+          (event as AuditedSectionedAssistantResponseEvent)[
+            responseDecisionAuditSymbol
+          ],
+        );
       }
 
       yield event;

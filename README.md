@@ -136,7 +136,7 @@ pnpm dev:embed-host
 pnpm eval:retrieval
 ```
 
-命令读取 `.env.local` 中的 `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 和 `RERANK_EVIDENCE_THRESHOLD`，输出错误拒答、错误回答、来源外事实、预期引用缺失、非预期引用、语言不匹配与技术错误。任一契约失败时命令以非零状态退出。
+命令读取 `.env.local` 中的 `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 和 `RERANK_NOISE_FLOOR`，输出错误拒答、错误回答、来源外事实、预期引用缺失、非预期引用、语言不匹配与技术错误。重排只负责排序和剔除低质量噪声，证据充分性由独立覆盖判定决定。任一契约失败时命令以非零状态退出。
 
 需要保存机器可读摘要以比较配置变化时运行：
 
@@ -160,7 +160,7 @@ RUN_LIVE_AI_SMOKE=true pnpm smoke:ai
 
 - `NEXT_PUBLIC_SUPABASE_URL` 与 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 可以进入浏览器包；数据库 RLS 是最终授权边界。
 - `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY`、`ADMIN_EMAIL`、`APP_URL` 和 `EMBED_APP_URL` 仅供服务端使用，禁止添加 `NEXT_PUBLIC_` 前缀；生产环境的 `EMBED_APP_URL` 必须使用与 `APP_URL` 不同的来源，以隔离 iframe 与宿主脚本。
-- `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 与 `RERANK_EVIDENCE_THRESHOLD` 是统一的服务端检索配置，由整组离线评测校准，不向管理员界面开放。
+- `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 与 `RERANK_NOISE_FLOOR` 是统一的服务端检索配置，由整组离线评测校准，不向管理员界面开放；噪声下限不能直接决定可靠拒答。
 - `PUBLIC_DAILY_MESSAGE_BUDGET` 控制公开助手每天最多接受的 AI 请求数；不调用 AI 供应商的受控回应不占用该预算，达到上限后事实咨询不再调用模型并保留人工联系入口。
 - `PUBLIC_CONVERSATION_CONTEXT_MESSAGES` 控制追问最多携带的近期消息数，取值范围为 `2`–`20`；至少保留最近一组访客主题与助手结果，以支持一次澄清后的重新检索。历史消息只用于理解追问，每个事实性问题仍会重新检索知识来源。
 

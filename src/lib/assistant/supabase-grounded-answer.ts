@@ -7,6 +7,7 @@ import {
   getGroundedAnswerGenerationProvider,
   getGroundedAnswerRerankingProvider,
 } from "@/lib/ai/grounded-answer-providers";
+import { getEvidenceCoverageProvider } from "@/lib/ai/evidence-coverage-provider";
 import { readRetrievalConfig } from "@/lib/assistant/retrieval-config";
 import type {
   AiCallLog,
@@ -70,6 +71,7 @@ function createConfiguredDependencies(
     },
     candidateRepository,
     rerankingProvider: getGroundedAnswerRerankingProvider(),
+    evidenceCoverageProvider: getEvidenceCoverageProvider(),
     answerProvider: getGroundedAnswerGenerationProvider(),
     callLogger,
     rateLimitRetry: {
@@ -91,7 +93,7 @@ function createConfiguredDependencies(
 function createCandidateRepository(supabase: SupabaseClient) {
   return {
     async retrieve(
-      _organizationId: string,
+      organizationId: string,
       embedding: number[],
       limit: number,
     ): Promise<RetrievedContentUnit[]> {
@@ -109,6 +111,7 @@ function createCandidateRepository(supabase: SupabaseClient) {
 
       return ((data ?? []) as RetrievedContentUnitRow[]).map((row) => ({
         id: row.content_unit_id,
+        organizationId,
         knowledgeSourceId: row.knowledge_source_id,
         sourceTitle: row.source_title,
         sourceUrl: row.source_url,
@@ -126,7 +129,7 @@ function createPublicCandidateRepository(
 ) {
   return {
     async retrieve(
-      _organizationId: string,
+      organizationId: string,
       embedding: number[],
       limit: number,
     ): Promise<RetrievedContentUnit[]> {
@@ -147,6 +150,7 @@ function createPublicCandidateRepository(
 
       return ((data ?? []) as RetrievedContentUnitRow[]).map((row) => ({
         id: row.content_unit_id,
+        organizationId,
         knowledgeSourceId: row.knowledge_source_id,
         sourceTitle: row.source_title,
         sourceUrl: row.source_url,

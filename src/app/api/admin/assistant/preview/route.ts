@@ -43,10 +43,12 @@ export async function POST(request: Request) {
     humanContactUrl: assistant.human_contact_url,
   };
   const question = questionResult.question;
+  const factualRequestId = crypto.randomUUID();
   const analysisInput = {
     organizationId: organization.id,
     question,
     assistant: assistantConfiguration,
+    factualRequestId,
   };
   const analysisDependencies =
     createSupabaseRequestAnalysisDependencies(supabase);
@@ -61,7 +63,7 @@ export async function POST(request: Request) {
             createSupabaseGroundedAnswerDependencies(supabase),
         },
       ),
-      crypto.randomUUID(),
+      factualRequestId,
     ),
     {
       label: assistant.human_contact_label,

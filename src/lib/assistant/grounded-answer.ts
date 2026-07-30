@@ -5,12 +5,23 @@ import {
   type ProviderErrorType,
 } from "../ai/provider-call.ts";
 import type { ConversationResultType } from "./conversation-result.ts";
+import {
+  decideEvidenceCoverage,
+  type EvidenceCoverageDecision,
+} from "./evidence-coverage.ts";
 import { detectQuestionLanguage } from "./question-language.ts";
+import {
+  responseDecisionAuditSymbol,
+  type AuditedFactualRequest,
+  type ResponseDecisionAudit,
+} from "./response-decision-audit.ts";
 
 export { ProviderCallError } from "../ai/provider-call.ts";
+export type { ResponseDecisionAudit } from "./response-decision-audit.ts";
 
 export type RetrievedContentUnit = {
   id: string;
+  organizationId: string;
   knowledgeSourceId: string;
   sourceTitle: string;
   sourceUrl: string | null;
@@ -22,6 +33,11 @@ export type RetrievedContentUnit = {
 export type GroundedEvidence = RetrievedContentUnit & {
   rerankScore: number;
   contentUnitId: string;
+};
+
+export type VerifiedAnswerEvidence = {
+  contentUnitId: string;
+  exactExcerpt: string;
 };
 
 export type GroundedCitation = {
@@ -70,6 +86,7 @@ export type AiCallLog = {
   organizationId: string;
   callType:
     | "request_analysis"
+    | "evidence_coverage"
     | "embedding"
     | "rerank"
     | "answer";
@@ -113,12 +130,20 @@ export type GroundedAnswerDependencies = {
       >
     >;
   };
+  evidenceCoverageProvider: ProviderIdentity & {
+    decide(input: {
+      organizationId: string;
+      factualRequestId: string;
+      normalizedQuestion: string;
+      candidates: GroundedEvidence[];
+    }): Promise<ProviderCallResult<unknown>>;
+  };
   answerProvider: ProviderIdentity & {
     streamAnswer(input: {
       question: string;
       context: ConversationContextMessage[];
       assistant: GroundedAnswerInput["assistant"];
-      evidence: GroundedEvidence[];
+      evidence: VerifiedAnswerEvidence[];
     }): {
       textStream: AsyncIterable<string>;
       metadata: Promise<ProviderCallMetadata>;
@@ -134,13 +159,14 @@ export type GroundedAnswerDependencies = {
   config: {
     candidateLimit: number;
     evidenceLimit: number;
-    evidenceThreshold: number;
+    rerankNoiseFloor: number;
   };
 };
 
 export type GroundedAnswerInput = {
   organizationId: string;
   question: string;
+  factualRequest?: AuditedFactualRequest;
   context?: ConversationContextMessage[];
   assistant: {
     name: string;
@@ -174,29 +200,26 @@ export async function* streamGroundedAnswer(
     embeddingResult.value,
     dependencies.config.candidateLimit,
   );
-
-  if (candidates.length === 0) {
-    yield* createInsufficientEvidenceResponse(input);
-    return;
-  }
-
-  const rerankingResult = await runLoggedProviderCall(
-    input.organizationId,
-    "rerank",
-    dependencies.rerankingProvider,
-    dependencies.callLogger,
-    () => dependencies.rerankingProvider.rerank(
-      retrievalQuestion,
-      candidates,
-    ),
-    dependencies.rateLimitRetry,
-  );
+  const rerankingResult = candidates.length === 0
+    ? null
+    : await runLoggedProviderCall(
+        input.organizationId,
+        "rerank",
+        dependencies.rerankingProvider,
+        dependencies.callLogger,
+        () => dependencies.rerankingProvider.rerank(
+          retrievalQuestion,
+          candidates,
+        ),
+        dependencies.rateLimitRetry,
+      );
 
   const candidatesById = new Map(
     candidates.map((candidate) => [candidate.id, candidate]),
   );
-  const evidence = rerankingResult.value
-    .filter(({ score }) => score >= dependencies.config.evidenceThreshold)
+  const coverageCandidates = (rerankingResult?.value ?? [])
+    .toSorted((left, right) => right.score - left.score)
+    .filter(({ score }) => score >= dependencies.config.rerankNoiseFloor)
     .slice(0, dependencies.config.evidenceLimit)
     .flatMap(({ contentUnitId, score }) => {
       const candidate = candidatesById.get(contentUnitId);
@@ -212,10 +235,52 @@ export async function* streamGroundedAnswer(
         : [];
     });
 
-  if (evidence.length === 0) {
-    yield* createInsufficientEvidenceResponse(input);
+  const factualRequest = input.factualRequest ?? {
+    id: crypto.randomUUID(),
+    originalText: input.question,
+    normalizedQuestion: input.question,
+    requestAnalysisVersion: "legacy-single-request",
+  };
+  const coverageDecision = await decideEvidenceCoverage(
+    {
+      organizationId: input.organizationId,
+      factualRequestId: factualRequest.id,
+      normalizedQuestion: factualRequest.normalizedQuestion,
+      candidates: coverageCandidates,
+    },
+    {
+      provider: dependencies.evidenceCoverageProvider,
+      callLogger: dependencies.callLogger,
+    },
+  );
+
+  if (coverageDecision.status === "unsupported") {
+    yield maybeAttachResponseDecisionAudit(
+      createGroundedRefusal(input.assistant, input.question),
+      input.factualRequest,
+      coverageDecision,
+    );
     return;
   }
+  if (coverageDecision.status === "conflicting") {
+    throw new EvidenceConflictRequiresMessageMappingError(coverageDecision);
+  }
+
+  const coverageCandidatesById = new Map(
+    coverageCandidates.map((candidate) => [candidate.id, candidate]),
+  );
+  const evidence = coverageDecision.evidence.flatMap((relationship) => {
+    const candidate = coverageCandidatesById.get(
+      relationship.contentUnitId,
+    );
+
+    return candidate
+      ? [{
+          ...candidate,
+          content: relationship.exactExcerpt,
+        }]
+      : [];
+  });
 
   let answerCompleted = false;
 
@@ -227,7 +292,12 @@ export async function* streamGroundedAnswer(
         question: input.question,
         context,
         assistant: input.assistant,
-        evidence,
+        evidence: coverageDecision.evidence.map(
+          ({ contentUnitId, exactExcerpt }) => ({
+            contentUnitId,
+            exactExcerpt,
+          }),
+        ),
       });
 
       for await (const delta of answerResult.textStream) {
@@ -278,11 +348,45 @@ export async function* streamGroundedAnswer(
     throw new Error("回答生成重试状态无效");
   }
 
-  yield {
-    type: "complete",
-    resultType: "grounded_answer",
-    citations: createCitations(evidence),
-  };
+  yield maybeAttachResponseDecisionAudit(
+    {
+      type: "complete",
+      resultType: "grounded_answer",
+      citations: createCitations(evidence),
+    },
+    input.factualRequest,
+    coverageDecision,
+  );
+}
+
+export type AuditedAssistantResponseEvent = AssistantResponseEvent & {
+  [responseDecisionAuditSymbol]?: ResponseDecisionAudit;
+};
+
+export class EvidenceConflictRequiresMessageMappingError extends Error {
+  readonly decision: EvidenceCoverageDecision;
+
+  constructor(decision: EvidenceCoverageDecision) {
+    super("证据覆盖判定为冲突，需要消息级冲突映射");
+    this.name = "EvidenceConflictRequiresMessageMappingError";
+    this.decision = decision;
+  }
+}
+
+function maybeAttachResponseDecisionAudit<T extends AssistantResponseEvent>(
+  event: T,
+  factualRequest: AuditedFactualRequest | undefined,
+  coverage: EvidenceCoverageDecision,
+): T {
+  if (!factualRequest) {
+    return event;
+  }
+
+  Object.defineProperty(event, responseDecisionAuditSymbol, {
+    value: { factualRequest, coverage } satisfies ResponseDecisionAudit,
+    enumerable: false,
+  });
+  return event;
 }
 
 function createRetrievalQuestion(
@@ -318,12 +422,6 @@ function createGroundedRefusal(
       url: assistant.humanContactUrl,
     },
   };
-}
-
-function* createInsufficientEvidenceResponse(
-  input: GroundedAnswerInput,
-): Generator<AssistantResponseEvent> {
-  yield createGroundedRefusal(input.assistant, input.question);
 }
 
 function createCitations(evidence: GroundedEvidence[]) {

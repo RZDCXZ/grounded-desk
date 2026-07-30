@@ -14,7 +14,7 @@ test("独立命令运行完整双语检索基线并输出可比较摘要", async
   assert.deepEqual(result.summary.config, {
     candidateLimit: 20,
     evidenceLimit: 5,
-    evidenceThreshold: 0.5,
+    rerankNoiseFloor: 0.05,
   });
   assert.deepEqual(result.summary.dataset, {
     total: 20,
@@ -50,27 +50,26 @@ test("独立命令运行完整双语检索基线并输出可比较摘要", async
   assert.equal(result.summary.passed, true);
 });
 
-test("阈值高于基线时整组摘要暴露引用和依据缺口", async () => {
+test("重排噪声下限过高时整组摘要暴露错误拒答", async () => {
   const result = await runEvaluation({
-    RERANK_EVIDENCE_THRESHOLD: "0.51",
+    RERANK_NOISE_FLOOR: "0.95",
   });
 
   assert.equal(result.exitCode, 1);
-  assert.ok(result.summary.failures.missingCitations > 0);
-  assert.ok(result.summary.failures.unsupportedFacts > 0);
+  assert.ok(result.summary.failures.falseRefusals > 0);
   assert.equal(result.summary.passed, false);
 });
 
-test("阈值过低时整组摘要暴露错误回答和来源外事实", async () => {
+test("降低噪声下限不会绕过独立覆盖判定制造错误回答", async () => {
   const result = await runEvaluation({
-    RERANK_EVIDENCE_THRESHOLD: "0.49",
+    RERANK_NOISE_FLOOR: "0",
   });
 
-  assert.equal(result.exitCode, 1);
-  assert.ok(result.summary.failures.falseAnswers > 0);
-  assert.ok(result.summary.failures.unsupportedFacts > 0);
-  assert.ok(result.summary.failures.unexpectedCitations > 0);
-  assert.equal(result.summary.passed, false);
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(result.summary.failures.falseAnswers, 0);
+  assert.equal(result.summary.failures.unsupportedFacts, 0);
+  assert.equal(result.summary.failures.unexpectedCitations, 0);
+  assert.equal(result.summary.passed, true);
 });
 
 test("召回数量不足时整组摘要暴露错误拒答", async () => {
@@ -99,7 +98,7 @@ async function runEvaluation(
     Record<
       | "RETRIEVAL_CANDIDATE_LIMIT"
       | "RERANK_EVIDENCE_LIMIT"
-      | "RERANK_EVIDENCE_THRESHOLD",
+      | "RERANK_NOISE_FLOOR",
       string
     >
   > = {},
@@ -117,7 +116,7 @@ async function runEvaluation(
         ...process.env,
         RETRIEVAL_CANDIDATE_LIMIT: "20",
         RERANK_EVIDENCE_LIMIT: "5",
-        RERANK_EVIDENCE_THRESHOLD: "0.5",
+        RERANK_NOISE_FLOOR: "0.05",
         ...environmentOverrides,
       },
       stdio: ["ignore", "pipe", "pipe"],

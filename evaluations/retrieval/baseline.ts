@@ -1,7 +1,7 @@
 import {
   streamGroundedAnswer,
   type AssistantResponseEvent,
-  type GroundedEvidence,
+  type VerifiedAnswerEvidence,
   type RetrievedContentUnit,
 } from "../../src/lib/assistant/grounded-answer.ts";
 import {
@@ -396,7 +396,7 @@ async function evaluateCase(
       ? evaluationCase.expectation
       : null;
   const events: AssistantResponseEvent[] = [];
-  let finalEvidence: GroundedEvidence[] = [];
+  let finalEvidence: VerifiedAnswerEvidence[] = [];
 
   try {
     for await (const event of streamGroundedAnswer(
@@ -436,6 +436,36 @@ async function evaluateCase(
                   score: scores.get(id) ?? 0,
                 }))
                 .sort((left, right) => right.score - left.score),
+            );
+          },
+        },
+        evidenceCoverageProvider: {
+          provider: "offline-evaluation",
+          model: "fixed-coverage",
+          async decide({ candidates }) {
+            const supportingCandidates = answerExpectation
+              ? candidates.filter(({ knowledgeSourceId }) =>
+                  answerExpectation.expectedKnowledgeSourceIds.includes(
+                    knowledgeSourceId,
+                  )
+                )
+              : [];
+
+            return providerResult(
+              supportingCandidates.length > 0
+                ? {
+                    status: "supported",
+                    evidence: supportingCandidates.map((candidate) => ({
+                      contentUnitId: candidate.id,
+                      relationship: "supports",
+                      exactExcerpt: candidate.content,
+                      reason: "离线评测数据标记为支持。",
+                    })),
+                  }
+                : {
+                    status: "unsupported",
+                    evidence: [],
+                  },
             );
           },
         },
@@ -585,10 +615,10 @@ function caseResult(
 
 function containsUnsupportedFacts(
   answer: string,
-  evidence: GroundedEvidence[],
+  evidence: VerifiedAnswerEvidence[],
 ) {
   const supportedStatements = new Set(
-    evidence.flatMap(({ content }) => statements(content)),
+    evidence.flatMap(({ exactExcerpt }) => statements(exactExcerpt)),
   );
 
   return statements(answer).some(
@@ -748,6 +778,7 @@ function contentUnit(
 ): EvaluationContentUnit {
   return {
     id: `unit-${id}`,
+    organizationId: ORGANIZATION_ID,
     knowledgeSourceId: `source-${knowledgeSourceKey}`,
     sourceTitle: title,
     sourceUrl: `https://example.test/${knowledgeSourceKey}`,

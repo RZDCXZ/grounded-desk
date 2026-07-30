@@ -8,7 +8,7 @@ import {
 export type RetrievalConfig = {
   candidateLimit: number;
   evidenceLimit: number;
-  evidenceThreshold: number;
+  rerankNoiseFloor: number;
 };
 
 export function readRetrievalConfig(
@@ -29,10 +29,10 @@ export function readRetrievalConfig(
       1,
       20,
     ),
-    evidenceThreshold: readNumberServerConfig(
+    rerankNoiseFloor: readNumberServerConfig(
       environment,
-      "RERANK_EVIDENCE_THRESHOLD",
-      0.5,
+      "RERANK_NOISE_FLOOR",
+      0.05,
       0,
       1,
     ),

@@ -18,7 +18,7 @@ import {
 } from "./provider-call.ts";
 import {
   type ConversationContextMessage,
-  type GroundedEvidence,
+  type VerifiedAnswerEvidence,
 } from "../assistant/grounded-answer.ts";
 
 const DEFAULT_SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
@@ -208,7 +208,7 @@ export function getGroundedAnswerGenerationProvider() {
         serviceScope: string;
         tone: string;
       };
-      evidence: GroundedEvidence[];
+      evidence: VerifiedAnswerEvidence[];
     }) {
       if (isDeterministicAiEnabled()) {
         return deterministicAnswerStream(input);
@@ -375,14 +375,16 @@ function findProviderStatusCode(error: unknown): number | undefined {
 }
 
 function deterministicAnswerStream(input: {
-  evidence: GroundedEvidence[];
+  evidence: VerifiedAnswerEvidence[];
 }) {
   const startedAt = performance.now();
   const traceId = crypto.randomUUID();
-  const evidenceText = input.evidence.map(({ content }) => content).join(" ");
+  const evidenceText = input.evidence
+    .map(({ exactExcerpt }) => exactExcerpt)
+    .join(" ");
   const answer = evidenceText.includes("两个工作小时")
     ? "根据当前可用知识，我们提供知识整理、来源核查和有据回答配置服务。工作日问题会在两个工作小时内确认。"
-    : `根据当前可用知识，${input.evidence[0]?.content ?? ""}`;
+    : `根据当前可用知识，${input.evidence[0]?.exactExcerpt ?? ""}`;
   const splitAt = Math.max(1, Math.floor(answer.length / 2));
 
   return {
@@ -432,14 +434,12 @@ function createSystemInstruction(input: {
 function createEvidencePrompt(
   question: string,
   context: ConversationContextMessage[],
-  evidence: GroundedEvidence[],
+  evidence: VerifiedAnswerEvidence[],
 ) {
   const evidencePayload = evidence.map(
-    ({ contentUnitId, sourceTitle, heading, content }) => ({
+    ({ contentUnitId, exactExcerpt }) => ({
       contentUnitId,
-      sourceTitle,
-      heading,
-      content,
+      exactExcerpt,
     }),
   );
 
