@@ -848,6 +848,99 @@ test("回答生成只接收已验证连续片段且引用身份始终由服务�
   );
 });
 
+test("知识冲突返回受控说明和逐项可验证片段且不调用回答模型", async () => {
+  const dependencies = createHappyPathDependencies();
+  const secondCandidate = {
+    id: "unit-b",
+    organizationId: "organization-1",
+    knowledgeSourceId: "source-b",
+    sourceTitle: "服务范围更新",
+    sourceUrl: "https://example.com/services-update",
+    heading: "知识整理",
+    content: "演示组织不再提供知识整理服务。",
+    similarity: 0.7,
+  };
+  dependencies.candidateRepository.retrieve = async () => [
+    ...(await createHappyPathDependencies().candidateRepository.retrieve(
+      "organization-1",
+      [],
+      5,
+    )),
+    secondCandidate,
+  ];
+  dependencies.rerankingProvider.rerank = async () =>
+    providerResult(
+      [
+        { contentUnitId: "unit-a", score: 0.95 },
+        { contentUnitId: "unit-b", score: 0.94 },
+      ],
+      "rerank-conflict",
+      2,
+    );
+  dependencies.evidenceCoverageProvider = {
+    provider: "deepseek",
+    model: "coverage-test",
+    async decide() {
+      return providerResult(
+        {
+          status: "conflicting",
+          evidence: [
+            {
+              contentUnitId: "unit-a",
+              relationship: "conflicts",
+              exactExcerpt: "演示组织提供知识整理服务。",
+              reason: "同一服务当前被描述为提供。",
+            },
+            {
+              contentUnitId: "unit-b",
+              relationship: "conflicts",
+              exactExcerpt: "演示组织不再提供知识整理服务。",
+              reason: "同一服务当前被描述为不再提供。",
+            },
+          ],
+        },
+        "coverage-conflict",
+        3,
+      );
+    },
+  };
+  dependencies.answerProvider.streamAnswer = () => {
+    assert.fail("知识冲突不应调用回答模型推导结论");
+  };
+
+  const events = await collectAssistantEvents(
+    streamGroundedAnswer(happyPathInput(), dependencies),
+  );
+
+  assert.deepEqual(events, [
+    {
+      type: "text_delta",
+      delta:
+        "现有知识对这个问题提供了无法同时成立的信息，目前无法给出唯一结论。",
+    },
+    {
+      type: "complete",
+      resultType: "knowledge_conflict",
+      citations: [
+        {
+          knowledgeSourceId: "source-a",
+          contentUnitId: "unit-a",
+          title: "服务范围",
+          url: "https://example.com/services",
+          exactExcerpt: "演示组织提供知识整理服务。",
+        },
+        {
+          knowledgeSourceId: "source-b",
+          contentUnitId: "unit-b",
+          title: "服务范围更新",
+          url: "https://example.com/services-update",
+          exactExcerpt: "演示组织不再提供知识整理服务。",
+        },
+      ],
+    },
+  ]);
+});
+
 test("覆盖判定供应商持续失败时形成技术故障而不是可靠拒答", async () => {
   const dependencies = createHappyPathDependencies();
   let attempts = 0;

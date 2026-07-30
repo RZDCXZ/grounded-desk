@@ -196,6 +196,14 @@ test("证据覆盖适配器隔离不可信诉求与候选且不发送来源元�
 
     assert.match(systemInstruction ?? "", /不可信数据/);
     assert.match(systemInstruction ?? "", /连续原文/);
+    assert.match(
+      systemInstruction ?? "",
+      /相同适用范围内无法同时成立/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /适用时间、产品、地区或条件不同且可以同时成立的内容不得判定为 conflicting/,
+    );
     assert.doesNotMatch(
       systemInstruction ?? "",
       /EXFILTRATE_COVERAGE/,

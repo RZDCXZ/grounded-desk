@@ -4,6 +4,7 @@ import {
   Clock3,
   ExternalLink,
   FileText,
+  GitCompare,
   ServerCrash,
   ThumbsDown,
   ThumbsUp,
@@ -52,14 +53,34 @@ type Feedback = {
 type LinkedQuestion = {
   id: string;
   answer_message_id: string | null;
-  trigger_type: "grounded_refusal" | "negative_feedback";
+  trigger_type:
+    | "grounded_refusal"
+    | "negative_feedback"
+    | "unsupported_factual_request"
+    | "knowledge_conflict";
   status: "pending" | "resolved";
 };
 type FactualRequestReview = {
+  id: string;
   assistant_message_id: string;
+  original_text: string;
+  normalized_question: string;
   completeness: "complete" | "incomplete";
+  coverage_status: "supported" | "unsupported" | "conflicting" | null;
   missing_information: string[];
   clarification_round: 0 | 1 | 2;
+  request_analysis_version: string;
+  response_strategy_version: string;
+};
+type EvidenceSnapshotReview = {
+  id: string;
+  factual_request_id: string;
+  content_unit_id: string;
+  source_title: string;
+  source_url: string | null;
+  exact_excerpt: string;
+  decision_reason: string;
+  coverage_decision_version: string;
 };
 
 export async function ConversationDetail({
@@ -89,6 +110,7 @@ export async function ConversationDetail({
     feedbackResult,
     questionsResult,
     factualRequestsResult,
+    evidenceSnapshotsResult,
   ] =
     await Promise.all([
       supabase
@@ -118,18 +140,28 @@ export async function ConversationDetail({
       supabase
         .from("message_factual_requests")
         .select(
-          "assistant_message_id, completeness, missing_information, clarification_round",
+          "id, assistant_message_id, original_text, normalized_question, completeness, coverage_status, missing_information, clarification_round, request_analysis_version, response_strategy_version",
         )
         .eq("organization_id", organization.id)
         .eq("conversation_id", conversationId)
         .order("request_order", { ascending: true }),
+      supabase
+        .from("evidence_snapshots")
+        .select(
+          "id, factual_request_id, content_unit_id, source_title, source_url, exact_excerpt, decision_reason, coverage_decision_version",
+        )
+        .eq("organization_id", organization.id)
+        .eq("conversation_id", conversationId)
+        .eq("relationship", "conflicts")
+        .order("created_at", { ascending: true }),
     ]);
   const readError =
     messagesResult.error ??
     citationsResult.error ??
     feedbackResult.error ??
     questionsResult.error ??
-    factualRequestsResult.error;
+    factualRequestsResult.error ??
+    evidenceSnapshotsResult.error;
 
   if (readError) {
     throw new Error("暂时无法读取会话上下文", { cause: readError });
@@ -141,6 +173,8 @@ export async function ConversationDetail({
   const linkedQuestions = (questionsResult.data ?? []) as LinkedQuestion[];
   const factualRequests =
     (factualRequestsResult.data ?? []) as FactualRequestReview[];
+  const evidenceSnapshots =
+    (evidenceSnapshotsResult.data ?? []) as EvidenceSnapshotReview[];
   const selectedQuestion = linkedQuestions.find(
     ({ id }) => id === highlightedQuestionId,
   );
@@ -148,6 +182,7 @@ export async function ConversationDetail({
     <ConversationTranscript
       citations={citations}
       feedback={feedback}
+      evidenceSnapshots={evidenceSnapshots}
       factualRequests={factualRequests}
       linkedQuestions={linkedQuestions}
       messages={messages}
@@ -226,6 +261,7 @@ export async function ConversationDetail({
 function ConversationTranscript({
   citations,
   feedback,
+  evidenceSnapshots,
   factualRequests,
   linkedQuestions,
   messages,
@@ -233,6 +269,7 @@ function ConversationTranscript({
 }: {
   citations: Citation[];
   feedback: Feedback[];
+  evidenceSnapshots: EvidenceSnapshotReview[];
   factualRequests: FactualRequestReview[];
   linkedQuestions: LinkedQuestion[];
   messages: Message[];
@@ -252,6 +289,13 @@ function ConversationTranscript({
               )}
               feedback={feedback.find(
                 ({ answer_message_id }) => answer_message_id === message.id,
+              )}
+              evidenceSnapshots={evidenceSnapshots.filter(
+                ({ factual_request_id }) =>
+                  factual_request_id === factualRequests.find(
+                    ({ assistant_message_id }) =>
+                      assistant_message_id === message.id,
+                  )?.id,
               )}
               factualRequest={factualRequests.find(
                 ({ assistant_message_id }) =>
@@ -287,6 +331,7 @@ function VisitorMessage({ message }: { message: Message }) {
 
 function AssistantMessage({
   citations,
+  evidenceSnapshots,
   factualRequest,
   feedback,
   highlighted,
@@ -294,6 +339,7 @@ function AssistantMessage({
   message,
 }: {
   citations: Citation[];
+  evidenceSnapshots: EvidenceSnapshotReview[];
   factualRequest?: FactualRequestReview;
   feedback?: Feedback;
   highlighted: boolean;
@@ -302,6 +348,7 @@ function AssistantMessage({
 }) {
   const isPending = message.status === "pending";
   const isRefusal = message.message_type === "grounded_refusal";
+  const isConflict = message.message_type === "knowledge_conflict";
   const isHandoff = message.message_type === "human_handoff";
   const isFailure = message.message_type === "technical_failure";
   const isGroundedAnswer = message.message_type === "grounded_answer";
@@ -333,6 +380,8 @@ function AssistantMessage({
                 ? "border-info/30 bg-info-light"
               : isRefusal
                 ? "border-warning/30 bg-warning-light"
+              : isConflict
+                ? "border-warning/30 bg-warning-light"
                 : isGroundedAnswer
                   ? "border-line border-l-4 border-l-success bg-card"
                   : "border-line bg-card",
@@ -360,12 +409,22 @@ function AssistantMessage({
             label="可靠拒答"
             tone="warning"
           />
+        ) : isConflict ? (
+          <ResultHeading
+            icon={GitCompare}
+            label="现有知识存在冲突"
+            tone="warning"
+          />
         ) : null}
 
         <div
           className={cn(
             "text-sm leading-6",
-            (isPending || isFailure || isRefusal || isHandoff) &&
+            (isPending ||
+              isFailure ||
+              isRefusal ||
+              isConflict ||
+              isHandoff) &&
               "mt-3",
           )}
         >
@@ -403,6 +462,59 @@ function AssistantMessage({
           </div>
         ) : null}
 
+        {isConflict && evidenceSnapshots.length > 0 ? (
+          <div className="mt-4 border-t border-warning/20 pt-3">
+            <p className="mb-2 text-[11px] font-semibold text-warning">
+              冲突来源
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {evidenceSnapshots.map((snapshot) => (
+                <ConflictSnapshotCard
+                  key={snapshot.id}
+                  snapshot={snapshot}
+                />
+              ))}
+            </div>
+            {factualRequest ? (
+              <details className="mt-3 rounded-lg border border-line bg-paper">
+                <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-ink-600">
+                  查看冲突判定审计
+                </summary>
+                <div className="border-t border-line px-3 py-3 text-[10px] leading-5 text-ink-600">
+                  <div className="mono">
+                    <p>
+                      规范化诉求：{factualRequest.normalized_question}
+                    </p>
+                    <p>
+                      覆盖状态：{factualRequest.coverage_status} ·
+                      请求分析：{factualRequest.request_analysis_version}
+                    </p>
+                    <p>
+                      响应策略：{factualRequest.response_strategy_version}
+                    </p>
+                  </div>
+                  <ul className="mt-3 space-y-2">
+                    {evidenceSnapshots.map((snapshot) => (
+                      <li key={snapshot.id}>
+                        <p className="font-semibold text-ink-900">
+                          {snapshot.source_title}
+                        </p>
+                        <p>
+                          审计说明：{snapshot.decision_reason}
+                        </p>
+                        <p className="mono text-ink-400">
+                          覆盖判定版本{" "}
+                          {snapshot.coverage_decision_version}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+
         {canHaveReviewMetadata && feedback ? (
           <div
             className={cn(
@@ -424,7 +536,7 @@ function AssistantMessage({
           </div>
         ) : null}
 
-        {canHaveReviewMetadata && linkedQuestion ? (
+        {(canHaveReviewMetadata || isConflict) && linkedQuestion ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/20 bg-warning-light/60 p-3">
             <span className="text-[11px] text-warning">
               已关联{linkedQuestion.status === "pending" ? "待处理" : "已解决"}
@@ -449,6 +561,53 @@ function AssistantMessage({
         {formatTime(message.created_at)}
       </time>
     </article>
+  );
+}
+
+function ConflictSnapshotCard({
+  snapshot,
+}: {
+  snapshot: EvidenceSnapshotReview;
+}) {
+  const content = (
+    <>
+      <div className="flex items-center gap-2">
+        <FileText
+          aria-hidden="true"
+          className="size-4 shrink-0 text-warning"
+        />
+        <span className="min-w-0 flex-1 truncate text-[12px] font-medium">
+          {snapshot.source_title}
+        </span>
+        {snapshot.source_url ? (
+          <ExternalLink
+            aria-hidden="true"
+            className="size-3.5 text-ink-400"
+          />
+        ) : null}
+      </div>
+      <p className="mono mt-1 break-all text-[9px] text-ink-400">
+        知识快照 {snapshot.content_unit_id}
+      </p>
+      <blockquote className="mt-2 border-l-2 border-warning/40 pl-3 text-[11px] leading-5 text-ink-600">
+        {snapshot.exact_excerpt}
+      </blockquote>
+    </>
+  );
+  const className =
+    "block rounded-lg border border-warning/20 bg-card p-3";
+
+  return snapshot.source_url ? (
+    <a
+      className={className}
+      href={snapshot.source_url}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {content}
+    </a>
+  ) : (
+    <div className={className}>{content}</div>
   );
 }
 

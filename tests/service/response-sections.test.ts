@@ -244,6 +244,78 @@ test("共享归并器将拒答分段转换为受控拒答展示状态", () => {
   );
 });
 
+test("知识冲突分段保留冲突状态和每一侧原文片段", async () => {
+  const sectionId = "00000000-0000-4000-8000-000000001706";
+  const citations = [
+    {
+      knowledgeSourceId: "00000000-0000-4000-8000-000000000701",
+      contentUnitId: "00000000-0000-4000-8000-000000000901",
+      title: "退款说明",
+      url: "https://example.com/refunds",
+      exactExcerpt: "退款会在两个工作日内到账。",
+    },
+    {
+      knowledgeSourceId: "00000000-0000-4000-8000-000000000702",
+      contentUnitId: "00000000-0000-4000-8000-000000000902",
+      title: "退款更新",
+      url: "https://example.com/refunds-update",
+      exactExcerpt: "退款会在五个工作日内到账。",
+    },
+  ];
+  const events = await collectEvents(
+    streamSingleSectionResponse(
+      (async function* () {
+        yield {
+          type: "text_delta" as const,
+          delta:
+            "现有知识对这个问题提供了无法同时成立的信息，目前无法给出唯一结论。",
+        };
+        yield {
+          type: "complete" as const,
+          resultType: "knowledge_conflict" as const,
+          citations,
+        };
+      })(),
+      sectionId,
+    ),
+  );
+
+  assert.deepEqual(events.at(-2), {
+    type: "section_complete",
+    section: {
+      id: sectionId,
+      order: 1,
+      status: "conflicting",
+      content:
+        "现有知识对这个问题提供了无法同时成立的信息，目前无法给出唯一结论。",
+      citations,
+    },
+  });
+  assert.deepEqual(
+    reduceAssistantResponsePresentation(
+      { answer: "", citations: [] },
+      events.at(-2)!,
+    ),
+    {
+      status: "conflict",
+      answer: "",
+      citations,
+      message:
+        "现有知识对这个问题提供了无法同时成立的信息，目前无法给出唯一结论。",
+    },
+  );
+  assert.equal(
+    reduceAssistantResponsePresentation(
+      {
+        answer: "",
+        citations,
+      },
+      events.at(-1)!,
+    ),
+    undefined,
+  );
+});
+
 async function collectEvents<T>(events: AsyncIterable<T>) {
   const collected: T[] = [];
 

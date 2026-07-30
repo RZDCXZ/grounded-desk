@@ -284,6 +284,43 @@ test("公开消息接口让证据不足的完整短问题形成可靠拒答", as
   assert.equal(result.audits[0]?.coverage.status, "unsupported");
 });
 
+test("公开消息接口将知识冲突作为独立结果返回并携带双方原文", async () => {
+  const result = await runPublicKnowledgeScenario("退款多久到账？", {
+    hasConflict: true,
+  });
+
+  assert.deepEqual(result.providerCalls, [
+    "embedding",
+    "rerank",
+    "coverage",
+  ]);
+  assert.equal(result.outcomes[0]?.type, "knowledge_conflict");
+  assert.equal(result.audits[0]?.coverage.status, "conflicting");
+  assert.deepEqual(result.sections[0]?.[0], {
+    id: result.audits[0]?.factualRequest.id,
+    order: 1,
+    status: "conflicting",
+    content:
+      "现有知识对这个问题提供了无法同时成立的信息，目前无法给出唯一结论。",
+    citations: [
+      {
+        knowledgeSourceId: "source-refund",
+        contentUnitId: "unit-refund",
+        title: "退款说明",
+        url: "https://example.com/refunds",
+        exactExcerpt: "退款会在两个工作日内到账。",
+      },
+      {
+        knowledgeSourceId: "source-refund-update",
+        contentUnitId: "unit-refund-update",
+        title: "退款更新",
+        url: "https://example.com/refunds-update",
+        exactExcerpt: "退款会在五个工作日内到账。",
+      },
+    ],
+  });
+});
+
 test("多事实诉求在逐项编排落地前不错误绑定单项审计身份", async () => {
   const result = await runPublicKnowledgeScenario(
     "退款多久到账，也可以开发票吗？",
@@ -1136,6 +1173,7 @@ async function runPublicKnowledgeScenario(
   options: {
     context?: ConversationContextMessage[];
     hasEvidence?: boolean;
+    hasConflict?: boolean;
     multipleFactualRequests?: boolean;
   } = {},
 ) {
@@ -1246,7 +1284,7 @@ async function runPublicKnowledgeScenario(
             },
             candidateRepository: {
               async retrieve() {
-                return options.hasEvidence
+                return options.hasEvidence || options.hasConflict
                   ? [
                       {
                         id: "unit-refund",
@@ -1255,9 +1293,24 @@ async function runPublicKnowledgeScenario(
                         sourceTitle: "退款说明",
                         sourceUrl: "https://example.com/refunds",
                         heading: "退款时间",
-                        content: "退款到账时间以业务知识说明为准。",
+                        content: options.hasConflict
+                          ? "退款会在两个工作日内到账。"
+                          : "退款到账时间以业务知识说明为准。",
                         similarity: 0.8,
                       },
+                      ...(options.hasConflict
+                        ? [{
+                            id: "unit-refund-update",
+                            organizationId: start.organizationId,
+                            knowledgeSourceId: "source-refund-update",
+                            sourceTitle: "退款更新",
+                            sourceUrl:
+                              "https://example.com/refunds-update",
+                            heading: "退款时间",
+                            content: "退款会在五个工作日内到账。",
+                            similarity: 0.79,
+                          }]
+                        : []),
                     ]
                   : [];
               },
@@ -1268,12 +1321,23 @@ async function runPublicKnowledgeScenario(
               async rerank() {
                 providerCalls.push("rerank");
                 return publicProviderResult(
-                  [
-                    {
-                      contentUnitId: "unit-refund",
-                      score: 0.91,
-                    },
-                  ],
+                  options.hasConflict
+                    ? [
+                        {
+                          contentUnitId: "unit-refund",
+                          score: 0.92,
+                        },
+                        {
+                          contentUnitId: "unit-refund-update",
+                          score: 0.91,
+                        },
+                      ]
+                    : [
+                        {
+                          contentUnitId: "unit-refund",
+                          score: 0.91,
+                        },
+                      ],
                   "rerank-trace",
                 );
               },
@@ -1294,6 +1358,16 @@ async function runPublicKnowledgeScenario(
                           reason: "测试候选直接支持诉求。",
                         })),
                       }
+                    : options.hasConflict
+                      ? {
+                          status: "conflicting",
+                          evidence: candidates.map((candidate) => ({
+                            contentUnitId: candidate.id,
+                            relationship: "conflicts",
+                            exactExcerpt: candidate.content,
+                            reason: "同一适用范围内内容互不相容。",
+                          })),
+                        }
                     : {
                         status: "unsupported",
                         evidence: [],

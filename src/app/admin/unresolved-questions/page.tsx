@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ExternalLink,
   FileText,
+  GitCompare,
   MessageSquareText,
   ThumbsDown,
 } from "lucide-react";
@@ -31,15 +32,21 @@ type UnresolvedQuestion = {
   question: string;
   answer_content: string | null;
   citations: unknown;
-  trigger_type: "grounded_refusal" | "negative_feedback";
+  trigger_type:
+    | "grounded_refusal"
+    | "negative_feedback"
+    | "unsupported_factual_request"
+    | "knowledge_conflict";
   status: QueueStatus;
   created_at: string;
   resolved_at: string | null;
 };
 type CitationSnapshot = {
   knowledgeSourceId: string | null;
+  contentUnitId?: string;
   title: string;
   url: string | null;
+  exactExcerpt?: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -88,7 +95,7 @@ export default async function UnresolvedQuestionsPage({
   return (
     <main className="page-enter min-h-screen">
       <AdminPageHeader
-        description="仅收录可靠拒答或负面质量反馈；技术故障由系统日志另行监控"
+        description="收录知识不足、知识冲突或负面质量反馈；技术故障由系统日志另行监控"
         title="待解决问题"
       />
 
@@ -136,7 +143,7 @@ export default async function UnresolvedQuestionsPage({
                 </EmptyTitle>
                 <EmptyDescription>
                   {status === "pending"
-                    ? "可靠拒答或“没帮助”反馈出现后，会自动进入这里。"
+                    ? "知识无支持、知识冲突、可靠拒答或“没帮助”反馈出现后，会自动进入这里。"
                     : "标记为已解决的问题会保留在此供复盘。"}
                 </EmptyDescription>
               </Empty>
@@ -285,7 +292,11 @@ function QuestionDetail({ question }: { question: UnresolvedQuestion }) {
             <p className="mt-2 text-[13px] leading-5">
               {question.trigger_type === "grounded_refusal"
                 ? "可靠拒答：现有知识不足以支持事实性回答。"
-                : "没帮助：访客明确认为这条助手回答没有帮助。"}
+                : question.trigger_type === "unsupported_factual_request"
+                  ? "知识无支持：当前事实诉求没有足够知识依据。"
+                : question.trigger_type === "knowledge_conflict"
+                  ? "知识冲突：同一适用范围内的知识无法同时成立。"
+                  : "没帮助：访客明确认为这条助手回答没有帮助。"}
             </p>
           </div>
           <div className="rounded-xl border border-line bg-paper p-4">
@@ -353,17 +364,27 @@ function TriggerLabel({
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-        trigger === "grounded_refusal"
+        trigger === "grounded_refusal" ||
+          trigger === "unsupported_factual_request" ||
+          trigger === "knowledge_conflict"
           ? "bg-warning-light text-warning"
           : "bg-danger-light text-danger",
       )}
     >
       {trigger === "negative_feedback" ? (
         <ThumbsDown aria-hidden="true" className="size-3" />
+      ) : trigger === "knowledge_conflict" ? (
+        <GitCompare aria-hidden="true" className="size-3" />
       ) : (
         <MessageSquareText aria-hidden="true" className="size-3" />
       )}
-      {trigger === "grounded_refusal" ? "可靠拒答" : "没帮助"}
+      {trigger === "knowledge_conflict"
+        ? "知识冲突"
+        : trigger === "negative_feedback"
+          ? "没帮助"
+          : trigger === "unsupported_factual_request"
+            ? "知识无支持"
+            : "可靠拒答"}
     </span>
   );
 }
@@ -381,8 +402,14 @@ function CitationSnapshotCard({
           {citation.title}
         </span>
         <span className="mono mt-0.5 block truncate text-[10px] text-ink-600">
-          {citation.url ?? "回答时未保存地址"}
+          {citation.url ??
+            `知识快照 ${citation.contentUnitId ?? "身份不可用"}`}
         </span>
+        {citation.exactExcerpt ? (
+          <span className="mt-2 block border-l-2 border-warning/40 pl-2 text-[11px] leading-5 text-ink-600">
+            {citation.exactExcerpt}
+          </span>
+        ) : null}
       </span>
       {citation.url ? (
         <ExternalLink aria-hidden="true" className="size-3.5 text-ink-400" />
@@ -421,7 +448,15 @@ function readCitationSnapshots(value: unknown): CitationSnapshot[] {
       (citation.url === null || typeof citation.url === "string") &&
       "knowledgeSourceId" in citation &&
       (citation.knowledgeSourceId === null ||
-        typeof citation.knowledgeSourceId === "string"),
+        typeof citation.knowledgeSourceId === "string") &&
+      (
+        !("contentUnitId" in citation) ||
+        typeof citation.contentUnitId === "string"
+      ) &&
+      (
+        !("exactExcerpt" in citation) ||
+        typeof citation.exactExcerpt === "string"
+      ),
   );
 }
 

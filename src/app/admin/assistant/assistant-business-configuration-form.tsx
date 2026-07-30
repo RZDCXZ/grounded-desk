@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Copy,
   ExternalLink,
+  GitCompare,
   Info,
   MessageCircle,
   Send,
@@ -23,6 +24,7 @@ import { useFormStatus } from "react-dom";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { StatusBadge, type Status } from "@/components/admin/status-badge";
 import { CitationList } from "@/components/assistant/citation-list";
+import { ConflictSourceList } from "@/components/assistant/conflict-source-list";
 import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,6 +89,7 @@ type PreviewResult = PreviewResultBase &
           | "idle"
           | "streaming"
           | "refusal"
+          | "conflict"
           | "handoff"
           | "temporary_failure";
         resultType?: never;
@@ -807,6 +810,8 @@ function AssistantPreview({
                         ? "border-info/30 bg-info-light"
                       : result.status === "refusal"
                         ? "border-warning/30 bg-warning-light"
+                      : result.status === "conflict"
+                        ? "border-warning/30 bg-warning-light"
                       : "border-line",
                   )}
                 >
@@ -863,6 +868,17 @@ function AssistantPreview({
                           {result.contact.label}
                         </a>
                       ) : null}
+                    </>
+                  ) : result.status === "conflict" ? (
+                    <>
+                      <p className="flex items-center gap-2 text-[13px] font-medium text-warning">
+                        <GitCompare aria-hidden="true" className="size-4" />
+                        现有知识存在冲突
+                      </p>
+                      <p className="mt-1 text-[13px] leading-6 text-ink-600">
+                        {result.message}
+                      </p>
+                      <ConflictSourceList citations={result.citations} />
                     </>
                   ) : result.status === "refusal" ? (
                     <>

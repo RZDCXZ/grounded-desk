@@ -21,6 +21,14 @@ const candidate: EvidenceCoverageCandidate = {
   similarity: 0.71,
   rerankScore: 0.32,
 };
+const conflictingCandidate: EvidenceCoverageCandidate = {
+  ...candidate,
+  id: "00000000-0000-4000-8000-000000000902",
+  knowledgeSourceId: "00000000-0000-4000-8000-000000000702",
+  sourceTitle: "退款补充说明",
+  sourceUrl: "https://example.com/refunds-update",
+  content: "审核通过后，退款需要五个工作日才能原路到账。",
+};
 
 test("低于旧硬阈值但具有连续充分片段的候选可判定为支持", async () => {
   const logs: AiCallLog[] = [];
@@ -96,6 +104,129 @@ test("主题相关但不能支持结论的候选只能判定为无支持", async
 
   assert.equal(decision.status, "unsupported");
   assert.deepEqual(decision.evidence, []);
+});
+
+test("同一适用范围内至少两项互不相容的可验证证据才形成冲突", async () => {
+  const decision = await decideEvidenceCoverage(
+    {
+      organizationId,
+      factualRequestId,
+      normalizedQuestion: "退款多久到账？",
+      candidates: [candidate, conflictingCandidate],
+    },
+    dependencies({
+      status: "conflicting",
+      evidence: [
+        {
+          contentUnitId: candidate.id,
+          relationship: "conflicts",
+          exactExcerpt: "退款通常会在两个工作日内原路到账",
+          reason: "同一退款流程给出两个工作日。",
+        },
+        {
+          contentUnitId: conflictingCandidate.id,
+          relationship: "conflicts",
+          exactExcerpt: "退款需要五个工作日才能原路到账",
+          reason: "同一退款流程给出五个工作日。",
+        },
+      ],
+    }),
+  );
+
+  assert.equal(decision.status, "conflicting");
+  assert.deepEqual(
+    decision.evidence.map(
+      ({ contentUnitId, knowledgeSourceId, exactExcerpt }) => ({
+        contentUnitId,
+        knowledgeSourceId,
+        exactExcerpt,
+      }),
+    ),
+    [
+      {
+        contentUnitId: candidate.id,
+        knowledgeSourceId: candidate.knowledgeSourceId,
+        exactExcerpt: "退款通常会在两个工作日内原路到账",
+      },
+      {
+        contentUnitId: conflictingCandidate.id,
+        knowledgeSourceId: conflictingCandidate.knowledgeSourceId,
+        exactExcerpt: "退款需要五个工作日才能原路到账",
+      },
+    ],
+  );
+});
+
+test("单项证据不能伪装为知识冲突", async () => {
+  let calls = 0;
+
+  await assert.rejects(
+    decideEvidenceCoverage(
+      {
+        organizationId,
+        factualRequestId,
+        normalizedQuestion: "退款多久到账？",
+        candidates: [candidate],
+      },
+      {
+        provider: {
+          provider: "test",
+          model: "coverage",
+          async decide() {
+            calls += 1;
+            return providerResult(
+              {
+                status: "conflicting",
+                evidence: [
+                  {
+                    contentUnitId: candidate.id,
+                    relationship: "conflicts",
+                    exactExcerpt: "退款通常会在两个工作日内原路到账",
+                    reason: "只有单项证据。",
+                  },
+                ],
+              },
+              `single-conflict-${calls}`,
+            );
+          },
+        },
+        callLogger: { async record() {} },
+      },
+    ),
+    (error) =>
+      error instanceof ProviderCallError &&
+      error.errorType === "invalid_response",
+  );
+
+  assert.equal(calls, 2);
+});
+
+test("可并存的不同条件证据保留供应商的支持判定而不被统一改判为冲突", async () => {
+  const regionalCandidate = {
+    ...conflictingCandidate,
+    content: "新加坡地区的退款通常会在五个工作日内原路到账。",
+  };
+  const decision = await decideEvidenceCoverage(
+    {
+      organizationId,
+      factualRequestId,
+      normalizedQuestion: "中国大陆地区退款多久到账？",
+      candidates: [candidate, regionalCandidate],
+    },
+    dependencies({
+      status: "supported",
+      evidence: [
+        {
+          contentUnitId: candidate.id,
+          relationship: "supports",
+          exactExcerpt: "退款通常会在两个工作日内原路到账",
+          reason: "该片段适用于问题所问地区。",
+        },
+      ],
+    }),
+  );
+
+  assert.equal(decision.status, "supported");
 });
 
 for (const scenario of [

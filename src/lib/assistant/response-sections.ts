@@ -13,6 +13,7 @@ import type { ConversationResultType } from "./conversation-result.ts";
 export type ResponseSectionStatus =
   | "supported"
   | "unsupported"
+  | "conflicting"
   | "conversational"
   | "clarification"
   | "handoff";
@@ -81,6 +82,10 @@ export type AssistantResponsePresentationUpdate =
       };
     })
   | (AssistantResponsePresentationState & {
+      status: "conflict";
+      message: string;
+    })
+  | (AssistantResponsePresentationState & {
       status: "handoff";
       message: string;
       contact: {
@@ -125,6 +130,15 @@ export function reduceAssistantResponsePresentation(
       };
     }
 
+    if (event.section.status === "conflicting") {
+      return {
+        status: "conflict",
+        answer: current.answer,
+        citations: event.section.citations,
+        message: event.section.content,
+      };
+    }
+
     return {
       status: "streaming",
       answer: event.section.content,
@@ -144,6 +158,7 @@ export function reduceAssistantResponsePresentation(
   if (event.type === "message_complete") {
     if (
       event.resultType === "grounded_refusal" ||
+      event.resultType === "knowledge_conflict" ||
       event.resultType === "human_handoff"
     ) {
       return undefined;
@@ -264,6 +279,7 @@ function attachDecisionAudit(
 
 const completionStatus = {
   grounded_answer: "supported",
+  knowledge_conflict: "conflicting",
   conversational_response: "conversational",
   clarification_request: "clarification",
   human_handoff: "handoff",

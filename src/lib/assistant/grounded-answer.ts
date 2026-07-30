@@ -43,8 +43,10 @@ export type VerifiedAnswerEvidence = {
 
 export type GroundedCitation = {
   knowledgeSourceId: string;
+  contentUnitId?: string;
   title: string;
   url: string | null;
+  exactExcerpt?: string;
 };
 
 export type ConversationContextMessage = {
@@ -69,7 +71,7 @@ export type GroundedAnswerEvent =
     }
   | {
       type: "complete";
-      resultType: "grounded_answer";
+      resultType: "grounded_answer" | "knowledge_conflict";
       citations: GroundedCitation[];
     };
 
@@ -273,7 +275,28 @@ export async function* streamGroundedAnswer(
     return;
   }
   if (coverageDecision.status === "conflicting") {
-    throw new EvidenceConflictRequiresMessageMappingError(coverageDecision);
+    yield {
+      type: "text_delta",
+      delta: detectQuestionLanguage(input.question) === "en"
+        ? "The available knowledge contains mutually incompatible information for this question, so I cannot provide a single conclusion."
+        : "现有知识对这个问题提供了无法同时成立的信息，目前无法给出唯一结论。",
+    };
+    yield maybeAttachResponseDecisionAudit(
+      {
+        type: "complete",
+        resultType: "knowledge_conflict",
+        citations: coverageDecision.evidence.map((relationship) => ({
+          knowledgeSourceId: relationship.knowledgeSourceId,
+          contentUnitId: relationship.contentUnitId,
+          title: relationship.sourceTitle,
+          url: normalizeCitationUrl(relationship.sourceUrl),
+          exactExcerpt: relationship.exactExcerpt,
+        })),
+      },
+      input.factualRequest,
+      coverageDecision,
+    );
+    return;
   }
 
   const coverageCandidatesById = new Map(
@@ -372,16 +395,6 @@ export async function* streamGroundedAnswer(
 export type AuditedAssistantResponseEvent = AssistantResponseEvent & {
   [responseDecisionAuditSymbol]?: AssistantDecisionAudit;
 };
-
-export class EvidenceConflictRequiresMessageMappingError extends Error {
-  readonly decision: EvidenceCoverageDecision;
-
-  constructor(decision: EvidenceCoverageDecision) {
-    super("证据覆盖判定为冲突，需要消息级冲突映射");
-    this.name = "EvidenceConflictRequiresMessageMappingError";
-    this.decision = decision;
-  }
-}
 
 function maybeAttachResponseDecisionAudit<T extends AssistantResponseEvent>(
   event: T,

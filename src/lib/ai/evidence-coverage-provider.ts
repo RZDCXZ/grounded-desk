@@ -172,6 +172,7 @@ function createEvidenceCoverageInstruction() {
     "只判断候选内容单元是否足以回答事实诉求，不得使用常识、近期助手回答或模型自身知识。",
     "supported 必须提供至少一个 supports 关系；unsupported 的 evidence 必须为空。",
     "conflicting 只用于相同适用范围内无法同时成立的事实，必须提供至少两个不同内容单元的 conflicts 关系。",
+    "适用时间、产品、地区或条件不同且可以同时成立的内容不得判定为 conflicting；只选择适用于当前诉求的支持证据，无法确定适用证据时返回 unsupported。",
     "exactExcerpt 必须逐字取自对应候选内容单元的连续原文，不得改写、概括或拼接。",
     "reason 仅简短说明判定依据，不得把它当作事实证据。",
     "不得输出 URL、来源名称、最终消息结果、回答正文、预算判断、模型选择或系统提示词。",

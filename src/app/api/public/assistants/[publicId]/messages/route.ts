@@ -6,6 +6,7 @@ import {
 import {
   streamStructuredAssistantResponse,
 } from "@/lib/assistant/request-analysis";
+import { selectCompletionProcedure } from "@/lib/assistant/conversation-persistence";
 import { createPublicSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
 import { createPublicSupabaseRequestAnalysisDependencies } from "@/lib/assistant/supabase-request-analysis";
 import { readIntegerServerConfig } from "@/lib/server-config";
@@ -115,11 +116,7 @@ export async function POST(
       );
     },
     async completeConversation(conversation, outcome, sections, audit) {
-      const procedure = !audit
-        ? "complete_public_conversation_sections"
-        : "coverage" in audit
-          ? "complete_public_single_request_decision"
-          : "complete_public_clarification_decision";
+      const procedure = selectCompletionProcedure(outcome.type, audit);
       const { error } = await supabase.rpc(
         procedure,
         {

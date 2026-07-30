@@ -552,7 +552,7 @@ async function evaluateCase(
   const completion = events.find(
     (event): event is Extract<
       AssistantResponseEvent,
-      { type: "complete"; resultType: "grounded_answer" }
+      { type: "complete" }
     > =>
       event.type === "complete" &&
       event.resultType === "grounded_answer",

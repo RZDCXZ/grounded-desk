@@ -2,6 +2,7 @@
 
 import {
   Check,
+  GitCompare,
   Info,
   MessageSquarePlus,
   Send,
@@ -14,6 +15,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { BrandMark } from "@/components/admin/brand-mark";
 import { CitationList } from "@/components/assistant/citation-list";
+import { ConflictSourceList } from "@/components/assistant/conflict-source-list";
 import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -58,6 +60,7 @@ type ConversationResult = ConversationResultBase &
         status:
           | "streaming"
           | "refusal"
+          | "conflict"
           | "handoff"
           | "temporary_failure"
           | "limit";
@@ -515,6 +518,8 @@ function AssistantResponse({
               ? "border-info/30 bg-info-light"
             : result.status === "refusal"
               ? "border-warning/30 bg-warning-light"
+            : result.status === "conflict"
+              ? "border-warning/30 bg-warning-light"
               : "border-line",
         )}
       >
@@ -569,6 +574,17 @@ function AssistantResponse({
               {result.message}
             </p>
             <ContactLink contact={result.contact} className="mt-3" />
+          </>
+        ) : result.status === "conflict" ? (
+          <>
+            <p className="flex items-center gap-2 text-[13px] font-medium text-warning">
+              <GitCompare aria-hidden="true" className="size-4" />
+              现有知识存在冲突
+            </p>
+            <p className="mt-2 text-[13px] leading-6 text-ink-600">
+              {result.message}
+            </p>
+            <ConflictSourceList citations={result.citations} />
           </>
         ) : result.status === "refusal" ? (
           <>

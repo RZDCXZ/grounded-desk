@@ -42,6 +42,7 @@ const resultFilters: Array<{
 }> = [
   { label: "全部", value: "all" },
   { label: "有据回答", value: "grounded_answer" },
+  { label: "知识冲突", value: "knowledge_conflict" },
   { label: "交流性回应", value: "conversational_response" },
   { label: "澄清提问", value: "clarification_request" },
   { label: "人工接续", value: "human_handoff" },

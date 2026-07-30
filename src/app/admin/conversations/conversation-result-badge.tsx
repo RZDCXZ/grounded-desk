@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   CircleHelp,
   Clock3,
+  GitCompare,
   MessageCircle,
   ServerCrash,
   UserCheck,
@@ -30,6 +31,11 @@ const resultPresentations: Record<
     className: "border-success/20 bg-success-light text-success",
     icon: CheckCircle2,
     label: "有据回答",
+  },
+  knowledge_conflict: {
+    className: "border-warning/20 bg-warning-light text-warning",
+    icon: GitCompare,
+    label: "知识冲突",
   },
   conversational_response: {
     className: "border-line bg-paper text-ink-600",
