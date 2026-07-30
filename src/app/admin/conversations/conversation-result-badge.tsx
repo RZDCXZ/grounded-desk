@@ -5,6 +5,7 @@ import {
   Clock3,
   MessageCircle,
   ServerCrash,
+  UserCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -44,6 +45,11 @@ const resultPresentations: Record<
     className: "border-warning/20 bg-warning-light text-warning",
     icon: AlertTriangle,
     label: "可靠拒答",
+  },
+  human_handoff: {
+    className: "border-info/20 bg-info-light text-info",
+    icon: UserCheck,
+    label: "人工接续",
   },
   technical_failure: {
     className: "border-danger/20 bg-danger-light text-danger",

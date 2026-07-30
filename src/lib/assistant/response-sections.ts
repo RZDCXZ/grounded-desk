@@ -5,7 +5,8 @@ import type {
 } from "./grounded-answer.ts";
 import {
   responseDecisionAuditSymbol,
-  type ResponseDecisionAudit,
+  type AssistantDecisionAudit,
+  type ClarificationThreadState,
 } from "./response-decision-audit.ts";
 import type { ConversationResultType } from "./conversation-result.ts";
 
@@ -13,7 +14,8 @@ export type ResponseSectionStatus =
   | "supported"
   | "unsupported"
   | "conversational"
-  | "clarification";
+  | "clarification"
+  | "handoff";
 
 export type ResponseSection = {
   id: string;
@@ -49,11 +51,12 @@ export type SectionedAssistantResponseEvent =
       type: "message_complete";
       resultType: ConversationResultType;
       sections: ResponseSection[];
+      clarificationState?: ClarificationThreadState;
     };
 
 export type AuditedSectionedAssistantResponseEvent =
   SectionedAssistantResponseEvent & {
-    [responseDecisionAuditSymbol]?: ResponseDecisionAudit;
+    [responseDecisionAuditSymbol]?: AssistantDecisionAudit;
   };
 
 type AssistantResponsePresentationState = {
@@ -76,6 +79,14 @@ export type AssistantResponsePresentationUpdate =
         label: string;
         url: string;
       };
+    })
+  | (AssistantResponsePresentationState & {
+      status: "handoff";
+      message: string;
+      contact: {
+        label: string;
+        url: string;
+      };
     });
 
 export function reduceAssistantResponsePresentation(
@@ -91,6 +102,19 @@ export function reduceAssistantResponsePresentation(
   }
 
   if (event.type === "section_complete") {
+    if (event.section.status === "handoff") {
+      if (!event.section.contact) {
+        throw new Error("人工接续分段缺少联系入口");
+      }
+      return {
+        status: "handoff",
+        answer: current.answer,
+        citations: [],
+        message: event.section.content,
+        contact: event.section.contact,
+      };
+    }
+
     if (event.section.status === "unsupported") {
       return {
         status: "refusal",
@@ -118,7 +142,10 @@ export function reduceAssistantResponsePresentation(
   }
 
   if (event.type === "message_complete") {
-    if (event.resultType === "grounded_refusal") {
+    if (
+      event.resultType === "grounded_refusal" ||
+      event.resultType === "human_handoff"
+    ) {
       return undefined;
     }
 
@@ -176,16 +203,23 @@ export async function* streamSingleSectionResponse(
         status: completionStatus[event.resultType],
         content,
         citations: event.citations,
+        ...(
+          event.resultType === "human_handoff"
+            ? { contact: event.contact }
+            : {}
+        ),
       };
       yield {
         type: "section_complete",
         section,
       };
-      yield attachDecisionAudit({
+      const messageComplete: SectionedAssistantResponseEvent = {
         type: "message_complete",
         resultType: event.resultType,
         sections: [section],
-      }, event);
+        ...createClarificationThreadState(event, section),
+      };
+      yield attachDecisionAudit(messageComplete, event);
       return;
     }
 
@@ -232,4 +266,26 @@ const completionStatus = {
   grounded_answer: "supported",
   conversational_response: "conversational",
   clarification_request: "clarification",
+  human_handoff: "handoff",
 } as const;
+
+function createClarificationThreadState(
+  event: LegacyAssistantResponseEvent,
+  section: ResponseSection,
+) {
+  const audit = (event as AuditedAssistantResponseEvent)[
+    responseDecisionAuditSymbol
+  ];
+
+  return audit &&
+      "outcome" in audit &&
+      audit.outcome === "clarification_request"
+    ? {
+        clarificationState: {
+          originalText: audit.factualRequest.originalText,
+          round: audit.factualRequest.clarificationRound,
+          latestClarification: section.content,
+        } satisfies ClarificationThreadState,
+      }
+    : {};
+}

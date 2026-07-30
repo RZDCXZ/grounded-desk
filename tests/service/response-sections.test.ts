@@ -123,6 +123,57 @@ test("可靠拒答通过同一分段完成契约返回受控内容和人工入�
   ]);
 });
 
+test("两轮后人工接续使用独立结果和信息入口且不伪装为拒答", async () => {
+  const sectionId = "00000000-0000-4000-8000-000000001705";
+  const contact = {
+    label: "联系人工团队",
+    url: "https://example.com/support",
+  };
+  const events = await collectEvents(
+    streamSingleSectionResponse(
+      (async function* () {
+        yield {
+          type: "text_delta" as const,
+          delta: "目前仍缺少：具体交易日期。请联系人工团队协助。",
+        };
+        yield {
+          type: "complete" as const,
+          resultType: "human_handoff" as const,
+          citations: [],
+          contact,
+        };
+      })(),
+      sectionId,
+    ),
+  );
+
+  assert.deepEqual(events.at(-2), {
+    type: "section_complete",
+    section: {
+      id: sectionId,
+      order: 1,
+      status: "handoff",
+      content: "目前仍缺少：具体交易日期。请联系人工团队协助。",
+      citations: [],
+      contact,
+    },
+  });
+  assert.deepEqual(events.at(-1), {
+    type: "message_complete",
+    resultType: "human_handoff",
+    sections: [
+      {
+        id: sectionId,
+        order: 1,
+        status: "handoff",
+        content: "目前仍缺少：具体交易日期。请联系人工团队协助。",
+        citations: [],
+        contact,
+      },
+    ],
+  });
+});
+
 test("公开端和预览端可通过同一归并器消费分段回答", () => {
   const streaming = reduceAssistantResponsePresentation(
     {

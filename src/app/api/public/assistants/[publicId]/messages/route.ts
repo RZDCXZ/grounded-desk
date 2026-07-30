@@ -26,6 +26,9 @@ type PublicConversationRow = {
   human_contact_url: string;
   context_messages: PublicConversationStart["context"];
   question_count: number;
+  clarification_original_text: string | null;
+  clarification_round: 1 | 2 | null;
+  clarification_content: string | null;
 };
 
 export async function POST(
@@ -44,7 +47,7 @@ export async function POST(
       usesAi,
     ) {
       const { data, error } = await supabase.rpc(
-        "begin_public_conversation",
+        "begin_public_conversation_with_clarification_state",
         {
           assistant_public_id: requestedPublicId,
           visitor_question: question,
@@ -61,7 +64,7 @@ export async function POST(
             process.env,
             "PUBLIC_CONVERSATION_CONTEXT_MESSAGES",
             6,
-            2,
+            6,
             20,
           ),
           request_uses_ai: usesAi ?? true,
@@ -77,13 +80,19 @@ export async function POST(
       }
 
       const row = (data as PublicConversationRow[] | null)?.[0];
-      return row ? mapConversation(row, conversationId) : null;
+      if (!row) {
+        return null;
+      }
+
+      const conversation = mapConversation(row, conversationId);
+      return conversation;
     },
     streamAnswer(conversation) {
       const analysisInput = {
         organizationId: conversation.organizationId,
         question: conversation.question,
         context: conversation.context,
+        clarificationState: conversation.clarificationState,
         assistant: conversation.assistant,
         factualRequestId: conversation.factualRequestId,
       };
@@ -106,16 +115,24 @@ export async function POST(
       );
     },
     async completeConversation(conversation, outcome, sections, audit) {
-      const { error } = await supabase.rpc(
-        audit
+      const procedure = !audit
+        ? "complete_public_conversation_sections"
+        : "coverage" in audit
           ? "complete_public_single_request_decision"
-          : "complete_public_conversation_sections",
+          : "complete_public_clarification_decision";
+      const { error } = await supabase.rpc(
+        procedure,
         {
           assistant_public_id: publicId,
           target_conversation_id: conversation.conversationId,
           result_type: outcome.type,
           result_sections: sections,
-          ...(audit ? { response_decision: audit } : {}),
+          ...(audit && "coverage" in audit
+            ? { response_decision: audit }
+            : {}),
+          ...(audit && "outcome" in audit
+            ? { clarification_decision: audit }
+            : {}),
         },
       );
 
@@ -167,6 +184,17 @@ function mapConversation(
     conversationId: row.conversation_id,
     assistantMessageId: row.assistant_message_id,
     organizationId: row.organization_id,
+    ...(row.clarification_original_text &&
+      row.clarification_round &&
+      row.clarification_content
+      ? {
+          clarificationState: {
+            originalText: row.clarification_original_text,
+            round: row.clarification_round,
+            latestClarification: row.clarification_content,
+          },
+        }
+      : {}),
     context: row.context_messages ?? [],
     assistant: {
       name: row.name,

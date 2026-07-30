@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   ThumbsDown,
   ThumbsUp,
+  UserCheck,
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -57,6 +58,7 @@ type ConversationResult = ConversationResultBase &
         status:
           | "streaming"
           | "refusal"
+          | "handoff"
           | "temporary_failure"
           | "limit";
         resultType?: never;
@@ -509,6 +511,8 @@ function AssistantResponse({
             ? "border-danger/30 bg-danger-light"
             : result.status === "limit"
               ? "border-info/30 bg-info-light"
+            : result.status === "handoff"
+              ? "border-info/30 bg-info-light"
             : result.status === "refusal"
               ? "border-warning/30 bg-warning-light"
               : "border-line",
@@ -554,6 +558,17 @@ function AssistantResponse({
               </Button>
               <ContactLink contact={result.contact} />
             </div>
+          </>
+        ) : result.status === "handoff" ? (
+          <>
+            <p className="flex items-center gap-2 text-[13px] font-medium text-info">
+              <UserCheck aria-hidden="true" className="size-4" />
+              需要人工协助确认
+            </p>
+            <p className="mt-2 text-[13px] leading-6 text-ink-600">
+              {result.message}
+            </p>
+            <ContactLink contact={result.contact} className="mt-3" />
           </>
         ) : result.status === "refusal" ? (
           <>

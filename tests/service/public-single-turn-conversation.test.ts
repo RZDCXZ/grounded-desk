@@ -17,6 +17,9 @@ import {
   type RequestAnalysis,
 } from "../../src/lib/assistant/request-analysis.ts";
 import type { ResponseSection } from "../../src/lib/assistant/response-sections.ts";
+import type {
+  AssistantDecisionAudit,
+} from "../../src/lib/assistant/response-decision-audit.ts";
 
 const publicId = "00000000-0000-4000-8000-000000000301";
 const conversationId = "00000000-0000-4000-8000-000000000401";
@@ -203,6 +206,28 @@ test("公开消息接口根据请求分析流式返回并持久化无引用的�
     },
   ]);
   assert.deepEqual(result.providerCalls, []);
+  assert.deepEqual(result.decisionAudits, [
+    {
+      factualRequest: {
+        id: result.sections[0]![0]!.id,
+        originalText: "退款",
+        normalizedQuestion: "退款",
+        missingInformation: ["想了解退款的具体方面"],
+        clarificationRound: 1,
+        requestAnalysisVersion: "request-analysis-v1",
+      },
+      outcome: "clarification_request",
+      responseStrategyVersion: "clarification-handoff-v1",
+    },
+  ]);
+  assert.deepEqual(
+    result.rawEvents.at(-1)?.clarificationState,
+    {
+      originalText: "退款",
+      round: 1,
+      latestClarification: "请补充：想了解退款的具体方面。",
+    },
+  );
 });
 
 test("公开消息接口让有充分证据的完整短问题形成有据回答", async () => {
@@ -1117,6 +1142,8 @@ async function runPublicKnowledgeScenario(
   const embeddingQuestions: string[] = [];
   const outcomes: PublicConversationOutcome[] = [];
   const audits: ResponseDecisionAudit[] = [];
+  const decisionAudits: AssistantDecisionAudit[] = [];
+  const sections: ResponseSection[][] = [];
   const providerCalls: string[] = [];
   const usesAi: boolean[] = [];
   const response = await createPublicConversationResponse(
@@ -1305,10 +1332,14 @@ async function runPublicKnowledgeScenario(
           },
         });
       },
-      async completeConversation(_start, outcome, _sections, audit) {
+      async completeConversation(_start, outcome, completedSections, audit) {
         outcomes.push(outcome);
+        sections.push(completedSections);
         if (audit) {
-          audits.push(audit);
+          decisionAudits.push(audit);
+          if ("coverage" in audit) {
+            audits.push(audit);
+          }
         }
       },
       async failConversation() {
@@ -1317,12 +1348,17 @@ async function runPublicKnowledgeScenario(
     },
   );
 
+  const rawEvents = await readRawNdjson(response);
+
   return {
     embeddingQuestions,
     audits,
-    events: await readNdjson(response),
+    decisionAudits,
+    events: normalizeSectionEvents(rawEvents),
     outcomes,
     providerCalls,
+    sections,
+    rawEvents,
     usesAi,
   };
 }

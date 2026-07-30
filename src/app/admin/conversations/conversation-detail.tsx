@@ -7,6 +7,7 @@ import {
   ServerCrash,
   ThumbsDown,
   ThumbsUp,
+  UserCheck,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -54,6 +55,12 @@ type LinkedQuestion = {
   trigger_type: "grounded_refusal" | "negative_feedback";
   status: "pending" | "resolved";
 };
+type FactualRequestReview = {
+  assistant_message_id: string;
+  completeness: "complete" | "incomplete";
+  missing_information: string[];
+  clarification_round: 0 | 1 | 2;
+};
 
 export async function ConversationDetail({
   conversationId,
@@ -76,7 +83,13 @@ export async function ConversationDetail({
     notFound();
   }
 
-  const [messagesResult, citationsResult, feedbackResult, questionsResult] =
+  const [
+    messagesResult,
+    citationsResult,
+    feedbackResult,
+    questionsResult,
+    factualRequestsResult,
+  ] =
     await Promise.all([
       supabase
         .from("messages")
@@ -102,12 +115,21 @@ export async function ConversationDetail({
         .select("id, answer_message_id, trigger_type, status")
         .eq("organization_id", organization.id)
         .eq("conversation_id", conversationId),
+      supabase
+        .from("message_factual_requests")
+        .select(
+          "assistant_message_id, completeness, missing_information, clarification_round",
+        )
+        .eq("organization_id", organization.id)
+        .eq("conversation_id", conversationId)
+        .order("request_order", { ascending: true }),
     ]);
   const readError =
     messagesResult.error ??
     citationsResult.error ??
     feedbackResult.error ??
-    questionsResult.error;
+    questionsResult.error ??
+    factualRequestsResult.error;
 
   if (readError) {
     throw new Error("暂时无法读取会话上下文", { cause: readError });
@@ -117,6 +139,8 @@ export async function ConversationDetail({
   const citations = (citationsResult.data ?? []) as Citation[];
   const feedback = (feedbackResult.data ?? []) as Feedback[];
   const linkedQuestions = (questionsResult.data ?? []) as LinkedQuestion[];
+  const factualRequests =
+    (factualRequestsResult.data ?? []) as FactualRequestReview[];
   const selectedQuestion = linkedQuestions.find(
     ({ id }) => id === highlightedQuestionId,
   );
@@ -124,6 +148,7 @@ export async function ConversationDetail({
     <ConversationTranscript
       citations={citations}
       feedback={feedback}
+      factualRequests={factualRequests}
       linkedQuestions={linkedQuestions}
       messages={messages}
       selectedQuestion={selectedQuestion}
@@ -201,12 +226,14 @@ export async function ConversationDetail({
 function ConversationTranscript({
   citations,
   feedback,
+  factualRequests,
   linkedQuestions,
   messages,
   selectedQuestion,
 }: {
   citations: Citation[];
   feedback: Feedback[];
+  factualRequests: FactualRequestReview[];
   linkedQuestions: LinkedQuestion[];
   messages: Message[];
   selectedQuestion?: LinkedQuestion;
@@ -225,6 +252,10 @@ function ConversationTranscript({
               )}
               feedback={feedback.find(
                 ({ answer_message_id }) => answer_message_id === message.id,
+              )}
+              factualRequest={factualRequests.find(
+                ({ assistant_message_id }) =>
+                  assistant_message_id === message.id,
               )}
               highlighted={
                 selectedQuestion?.answer_message_id === message.id
@@ -256,12 +287,14 @@ function VisitorMessage({ message }: { message: Message }) {
 
 function AssistantMessage({
   citations,
+  factualRequest,
   feedback,
   highlighted,
   linkedQuestion,
   message,
 }: {
   citations: Citation[];
+  factualRequest?: FactualRequestReview;
   feedback?: Feedback;
   highlighted: boolean;
   linkedQuestion?: LinkedQuestion;
@@ -269,6 +302,7 @@ function AssistantMessage({
 }) {
   const isPending = message.status === "pending";
   const isRefusal = message.message_type === "grounded_refusal";
+  const isHandoff = message.message_type === "human_handoff";
   const isFailure = message.message_type === "technical_failure";
   const isGroundedAnswer = message.message_type === "grounded_answer";
   const resultType = getAssistantResultType(message);
@@ -295,6 +329,8 @@ function AssistantMessage({
             ? "border-info/30 bg-info-light"
             : isFailure
               ? "border-danger/30 bg-danger-light"
+              : isHandoff
+                ? "border-info/30 bg-info-light"
               : isRefusal
                 ? "border-warning/30 bg-warning-light"
                 : isGroundedAnswer
@@ -312,6 +348,12 @@ function AssistantMessage({
             label="技术故障"
             tone="danger"
           />
+        ) : isHandoff ? (
+          <ResultHeading
+            icon={UserCheck}
+            label="需要人工协助确认"
+            tone="info"
+          />
         ) : isRefusal ? (
           <ResultHeading
             icon={AlertTriangle}
@@ -323,7 +365,8 @@ function AssistantMessage({
         <div
           className={cn(
             "text-sm leading-6",
-            (isPending || isFailure || isRefusal) && "mt-3",
+            (isPending || isFailure || isRefusal || isHandoff) &&
+              "mt-3",
           )}
         >
           {isPending ? (
@@ -332,6 +375,20 @@ function AssistantMessage({
             <ControlledMarkdown>{message.content}</ControlledMarkdown>
           )}
         </div>
+
+        {factualRequest?.completeness === "incomplete" ? (
+          <div className="mt-4 border-t border-info/20 pt-3 text-[11px] leading-5 text-ink-600">
+            <p className="font-semibold text-info">
+              {isHandoff
+                ? "两轮澄清后转人工接续"
+                : `第 ${factualRequest.clarification_round} 轮澄清`}
+            </p>
+            <p className="mt-1">
+              仍缺少：
+              {factualRequest.missing_information.join("、")}
+            </p>
+          </div>
+        ) : null}
 
         {isGroundedAnswer && citations.length > 0 ? (
           <div className="mt-4 border-t border-line pt-3">

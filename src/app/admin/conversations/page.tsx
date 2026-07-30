@@ -44,6 +44,7 @@ const resultFilters: Array<{
   { label: "有据回答", value: "grounded_answer" },
   { label: "交流性回应", value: "conversational_response" },
   { label: "澄清提问", value: "clarification_request" },
+  { label: "人工接续", value: "human_handoff" },
   { label: "可靠拒答", value: "grounded_refusal" },
   { label: "技术故障", value: "technical_failure" },
 ];

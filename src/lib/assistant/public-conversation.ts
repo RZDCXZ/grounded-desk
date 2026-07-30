@@ -8,7 +8,8 @@ import type {
 import { detectQuestionLanguage } from "./question-language.ts";
 import {
   responseDecisionAuditSymbol,
-  type ResponseDecisionAudit,
+  type AssistantDecisionAudit,
+  type ClarificationThreadState,
 } from "./response-decision-audit.ts";
 import {
   streamSingleSectionResponse,
@@ -23,6 +24,7 @@ export type PublicConversationStart = {
   conversationId: string;
   assistantMessageId: string;
   organizationId: string;
+  clarificationState?: ClarificationThreadState;
   context?: ConversationContextMessage[];
   assistant: {
     name: string;
@@ -76,7 +78,7 @@ type PublicConversationDependencies = {
     start: PublicConversationStart,
     outcome: PublicConversationOutcome,
     sections: ResponseSection[],
-    audit?: ResponseDecisionAudit,
+    audit?: AssistantDecisionAudit,
   ): Promise<void>;
   failConversation(start: PublicConversationStart): Promise<void>;
 };

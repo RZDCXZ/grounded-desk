@@ -242,6 +242,11 @@ test("预览 HTTP 流由请求分析缺失信息展示普通澄清提问", async
     {
       type: "message_complete",
       resultType: "clarification_request",
+      clarificationState: {
+        originalText: "退款",
+        round: 1,
+        latestClarification: "请补充：想了解退款的具体方面。",
+      },
       sections: [
         {
           id: "00000000-0000-4000-8000-000000001802",

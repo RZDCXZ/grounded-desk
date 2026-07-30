@@ -12,6 +12,9 @@ import type {
   AiCallLog,
   AssistantResponseEvent,
 } from "../../src/lib/assistant/grounded-answer.ts";
+import {
+  responseDecisionAuditSymbol,
+} from "../../src/lib/assistant/response-decision-audit.ts";
 
 const input = {
   organizationId: "00000000-0000-4000-8000-000000000101",
@@ -462,6 +465,357 @@ test("不完整事实诉求使用缺失信息形成受控澄清且不执行知�
     },
   ]);
   assert.equal(knowledgeCalls, 0);
+});
+
+test("连续不完整诉求的第二轮使用新增上下文并推进澄清轮次", async () => {
+  const logs: AiCallLog[] = [];
+  const secondRoundInput = {
+    ...input,
+    question: "到账时间",
+    context: [
+      {
+        role: "visitor" as const,
+        content: "退款",
+        resultType: null,
+      },
+      {
+        role: "assistant" as const,
+        content: "请补充：想了解退款条件还是到账时间。",
+        resultType: "clarification_request" as const,
+      },
+    ],
+  };
+  const result = await analyzeAssistantRequest(
+    secondRoundInput,
+    dependencies(
+      candidate({
+        language: "zh",
+        interactionType: "incomplete",
+        conversationalIntent: null,
+        factualRequests: [
+          {
+            originalText: "退款",
+            normalizedQuestion: "退款到账时间",
+            completeness: "incomplete",
+            missingInformation: ["原支付方式"],
+          },
+        ],
+      }),
+      logs,
+    ),
+  );
+
+  assert.equal(
+    Reflect.get(result.factualRequests[0]!, "clarificationRound"),
+    2,
+  );
+  assert.equal(
+    Reflect.get(result.factualRequests[0]!, "requiresHumanHandoff"),
+    false,
+  );
+});
+
+test("第二轮若重复上一轮澄清会按无效结构重试并采用不同缺失信息", async () => {
+  const logs: AiCallLog[] = [];
+  let calls = 0;
+  const secondRoundInput = {
+    ...input,
+    question: "到账时间",
+    context: [
+      {
+        role: "visitor" as const,
+        content: "退款",
+        resultType: null,
+      },
+      {
+        role: "assistant" as const,
+        content: "请补充：原支付方式。",
+        resultType: "clarification_request" as const,
+      },
+    ],
+  };
+  const repeated = candidate({
+    language: "zh",
+    interactionType: "incomplete",
+    conversationalIntent: null,
+    factualRequests: [
+      {
+        originalText: "退款",
+        normalizedQuestion: "退款到账时间",
+        completeness: "incomplete",
+        missingInformation: ["原支付方式"],
+      },
+    ],
+  });
+  const different = candidate({
+    ...repeated,
+    factualRequests: [
+      {
+        ...repeated.factualRequests[0]!,
+        missingInformation: ["需要确认的退款记录"],
+      },
+    ],
+  });
+  const result = await analyzeAssistantRequest(secondRoundInput, {
+    provider: {
+      provider: "test",
+      model: "request-analysis",
+      async analyze() {
+        calls += 1;
+        return providerResult(
+          calls === 1 ? repeated : different,
+          `analysis-trace-${calls}`,
+        );
+      },
+    },
+    callLogger: {
+      async record(log) {
+        logs.push(log);
+      },
+    },
+  });
+
+  assert.equal(calls, 2);
+  assert.deepEqual(
+    result.factualRequests[0]?.missingInformation,
+    ["需要确认的退款记录"],
+  );
+  assert.equal(logs[0]?.outcome, "error");
+  assert.equal(logs[0]?.errorType, "invalid_response");
+  assert.equal(logs[1]?.outcome, "success");
+});
+
+test("两轮澄清后仍不完整时标记人工接续而不是可靠拒答", async () => {
+  const result = await analyzeAssistantRequest(
+    {
+      ...input,
+      question: "银行卡",
+      context: [
+        {
+          role: "visitor",
+          content: "退款",
+          resultType: null,
+        },
+        {
+          role: "assistant",
+          content: "请补充：想了解退款条件还是到账时间。",
+          resultType: "clarification_request",
+        },
+        {
+          role: "visitor",
+          content: "到账时间",
+          resultType: null,
+        },
+        {
+          role: "assistant",
+          content: "请补充：原支付方式。",
+          resultType: "clarification_request",
+        },
+      ],
+    },
+    dependencies(
+      candidate({
+        language: "zh",
+        interactionType: "incomplete",
+        conversationalIntent: null,
+        factualRequests: [
+          {
+            originalText: "退款",
+            normalizedQuestion: "银行卡退款到账时间",
+            completeness: "incomplete",
+            missingInformation: ["具体交易日期"],
+          },
+        ],
+      }),
+      [],
+    ),
+  );
+
+  assert.equal(
+    Reflect.get(result.factualRequests[0]!, "clarificationRound"),
+    2,
+  );
+  assert.equal(
+    Reflect.get(result.factualRequests[0]!, "requiresHumanHandoff"),
+    true,
+  );
+});
+
+test("需要人工接续的不完整诉求返回受控说明与已配置联系入口", async () => {
+  let knowledgeCalls = 0;
+  const handoffAnalysis = analysis({
+    language: "zh",
+    interactionType: "incomplete",
+    conversationalIntent: null,
+    factualRequests: [
+      {
+        id: "00000000-0000-4000-8000-000000001808",
+        order: 1,
+        originalText: "退款",
+        normalizedQuestion: "银行卡退款到账时间",
+        completeness: "incomplete",
+        missingInformation: ["具体交易日期"],
+        clarificationRound: 2,
+        requiresHumanHandoff: true,
+      },
+    ],
+  });
+  const events = await collectEvents(
+    streamAnalyzedAssistantResponse(
+      {
+        ...input,
+        assistant: {
+          ...input.assistant,
+          humanContactLabel: "联系退款专员",
+          humanContactUrl: "https://example.com/refund-support",
+        },
+      },
+      {
+        analyzeRequest: async () => handoffAnalysis,
+        streamKnowledgeResponse() {
+          knowledgeCalls += 1;
+          return responseEvents([]);
+        },
+      },
+    ),
+  );
+
+  assert.deepEqual(events, [
+    {
+      type: "text_delta",
+      delta:
+        "目前仍缺少：具体交易日期。请联系人工团队协助。",
+    },
+    {
+      type: "complete",
+      resultType: "human_handoff",
+      citations: [],
+      contact: {
+        label: "联系退款专员",
+        url: "https://example.com/refund-support",
+      },
+    },
+  ]);
+  assert.deepEqual(
+    Reflect.get(events.at(-1)!, responseDecisionAuditSymbol),
+    {
+      factualRequest: {
+        id: "00000000-0000-4000-8000-000000001808",
+        originalText: "退款",
+        normalizedQuestion: "银行卡退款到账时间",
+        missingInformation: ["具体交易日期"],
+        clarificationRound: 2,
+        requestAnalysisVersion: "request-analysis-v1",
+      },
+      outcome: "human_handoff",
+      responseStrategyVersion: "clarification-handoff-v1",
+    },
+  );
+  assert.equal(knowledgeCalls, 0);
+});
+
+test("新的不完整事实意图会重置上一意图的澄清计数", async () => {
+  const result = await analyzeAssistantRequest(
+    {
+      ...input,
+      question: "发票",
+      context: [
+        {
+          role: "visitor",
+          content: "退款",
+          resultType: null,
+        },
+        {
+          role: "assistant",
+          content: "请补充：想了解退款条件还是到账时间。",
+          resultType: "clarification_request",
+        },
+      ],
+    },
+    dependencies(
+      candidate({
+        language: "zh",
+        interactionType: "incomplete",
+        conversationalIntent: null,
+        factualRequests: [
+          {
+            originalText: "发票",
+            normalizedQuestion: "发票",
+            completeness: "incomplete",
+            missingInformation: ["需要哪一种发票"],
+          },
+        ],
+      }),
+      [],
+    ),
+  );
+
+  assert.equal(
+    Reflect.get(result.factualRequests[0]!, "clarificationRound"),
+    1,
+  );
+  assert.equal(
+    Reflect.get(result.factualRequests[0]!, "requiresHumanHandoff"),
+    false,
+  );
+});
+
+test("新意图重置后的下一回合依据稳定审计身份推进到第二轮", async () => {
+  const result = await analyzeAssistantRequest(
+    {
+      ...input,
+      question: "电子发票",
+      context: [
+        {
+          role: "visitor",
+          content: "退款",
+          resultType: null,
+        },
+        {
+          role: "assistant",
+          content: "请补充：想了解退款的具体方面。",
+          resultType: "clarification_request",
+        },
+        {
+          role: "visitor",
+          content: "发票",
+          resultType: null,
+        },
+        {
+          role: "assistant",
+          content: "请补充：需要哪一种发票。",
+          resultType: "clarification_request",
+        },
+      ],
+      clarificationState: {
+        originalText: "发票",
+        round: 1,
+        latestClarification: "请补充：需要哪一种发票。",
+      },
+    },
+    dependencies(
+      candidate({
+        language: "zh",
+        interactionType: "incomplete",
+        conversationalIntent: null,
+        factualRequests: [
+          {
+            originalText: "发票",
+            normalizedQuestion: "电子发票",
+            completeness: "incomplete",
+            missingInformation: ["开票主体"],
+          },
+        ],
+      }),
+      [],
+    ),
+  );
+
+  assert.equal(result.factualRequests[0]?.clarificationRound, 2);
+  assert.equal(
+    result.factualRequests[0]?.requiresHumanHandoff,
+    false,
+  );
 });
 
 function dependencies(value: unknown, logs: AiCallLog[]) {

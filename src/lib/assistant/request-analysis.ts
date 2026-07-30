@@ -14,6 +14,11 @@ import {
   type GroundedAnswerDependencies,
   type GroundedAnswerInput,
 } from "./grounded-answer.ts";
+import {
+  responseDecisionAuditSymbol,
+  type ClarificationDecisionAudit,
+  type ClarificationThreadState,
+} from "./response-decision-audit.ts";
 
 const REQUEST_ANALYSIS_VERSION = "request-analysis-v1";
 const MAXIMUM_FACTUAL_REQUESTS = 3;
@@ -49,6 +54,8 @@ export type RequestAnalysis = Omit<
     RequestAnalysisCandidate["factualRequests"][number] & {
       id: string;
       order: number;
+      clarificationRound?: 0 | 1 | 2;
+      requiresHumanHandoff?: boolean;
     }
   >;
 };
@@ -56,11 +63,15 @@ export type RequestAnalysis = Omit<
 export type RequestAnalysisInput = {
   organizationId: string;
   question: string;
+  factualRequestId?: string;
+  clarificationState?: ClarificationThreadState;
   context?: ConversationContextMessage[];
   assistant: {
     name: string;
     serviceScope: string;
     tone?: string;
+    humanContactLabel?: string;
+    humanContactUrl?: string;
   };
 };
 
@@ -82,7 +93,6 @@ type StructuredAssistantResponseInput = Omit<
   "assistant"
 > & {
   assistant: GroundedAnswerInput["assistant"];
-  factualRequestId?: string;
 };
 
 export async function analyzeAssistantRequest(
@@ -94,12 +104,21 @@ export async function analyzeAssistantRequest(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let result: ProviderCallResult<unknown>;
     let candidate: RequestAnalysisCandidate | null;
+    let clarificationStates:
+      | Array<{
+          clarificationRound: 0 | 1 | 2;
+          requiresHumanHandoff: boolean;
+        }>
+      | null;
 
     try {
       result = await dependencies.provider.analyze(input);
       candidate = validateRequestAnalysisCandidate(result.value);
+      clarificationStates = candidate
+        ? deriveClarificationStates(input, candidate)
+        : null;
 
-      if (!candidate) {
+      if (!candidate || !clarificationStates) {
         throw new ProviderCallError("请求分析服务返回无效结果", {
           errorType: "invalid_response",
           traceId: result.traceId,
@@ -145,6 +164,7 @@ export async function analyzeAssistantRequest(
         (request, index) => ({
           id: crypto.randomUUID(),
           order: index + 1,
+          ...clarificationStates[index],
           ...request,
         }),
       ),
@@ -152,6 +172,101 @@ export async function analyzeAssistantRequest(
   }
 
   throw finalError;
+}
+
+function deriveClarificationStates(
+  input: RequestAnalysisInput,
+  candidate: RequestAnalysisCandidate,
+) {
+  const thread = input.clarificationState
+    ? {
+        originalText: input.clarificationState.originalText,
+        rounds: input.clarificationState.round,
+        latestClarification:
+          input.clarificationState.latestClarification,
+      }
+    : findTrailingClarificationThread(input.context ?? []);
+  const states: Array<{
+    clarificationRound: 0 | 1 | 2;
+    requiresHumanHandoff: boolean;
+  }> = [];
+
+  for (const request of candidate.factualRequests) {
+    if (request.completeness === "complete") {
+      states.push({
+        clarificationRound: 0 as const,
+        requiresHumanHandoff: false,
+      });
+      continue;
+    }
+
+    const continuesThread =
+      thread !== null &&
+      normalizedText(request.originalText) ===
+        normalizedText(thread.originalText);
+    const previousRounds = continuesThread ? thread.rounds : 0;
+    const requiresHumanHandoff = previousRounds >= 2;
+    const clarificationRound = Math.min(
+      previousRounds + 1,
+      2,
+    ) as 1 | 2;
+
+    if (
+      continuesThread &&
+      previousRounds === 1 &&
+      createClarificationContent(
+        candidate.language,
+        request.missingInformation,
+      ) === thread.latestClarification
+    ) {
+      return null;
+    }
+
+    states.push({
+      clarificationRound,
+      requiresHumanHandoff,
+    });
+  }
+
+  return states;
+}
+
+function findTrailingClarificationThread(
+  context: ConversationContextMessage[],
+) {
+  let index = context.length - 1;
+  let rounds = 0;
+  let originalText = "";
+  let latestClarification = "";
+
+  while (index >= 1) {
+    const assistant = context[index];
+    const visitor = context[index - 1];
+    if (
+      assistant?.role !== "assistant" ||
+      assistant.resultType !== "clarification_request" ||
+      visitor?.role !== "visitor"
+    ) {
+      break;
+    }
+
+    rounds += 1;
+    originalText = visitor.content;
+    latestClarification ||= assistant.content;
+    index -= 2;
+  }
+
+  return rounds > 0
+    ? {
+        rounds: Math.min(rounds, 2),
+        originalText,
+        latestClarification,
+      }
+    : null;
+}
+
+function normalizedText(value: string) {
+  return value.normalize("NFKC").replace(/\s+/gu, " ").trim();
 }
 
 export function streamAnalyzedAssistantResponse(
@@ -189,15 +304,98 @@ export function streamAnalyzedAssistantResponse(
       ({ completeness }) => completeness === "incomplete",
     );
     if (incompleteRequest) {
-      yield* streamClarificationRequest(
-        analysis.language,
-        incompleteRequest.missingInformation,
+      const clarificationRound =
+        incompleteRequest.clarificationRound === 2 ? 2 : 1;
+      const factualRequestId =
+        input.factualRequestId ?? incompleteRequest.id;
+      const outcome = incompleteRequest.requiresHumanHandoff
+        ? "human_handoff"
+        : "clarification_request";
+      const audit = {
+        factualRequest: {
+          id: factualRequestId,
+          originalText: incompleteRequest.originalText,
+          normalizedQuestion: incompleteRequest.normalizedQuestion,
+          requestAnalysisVersion: analysis.version,
+          missingInformation: incompleteRequest.missingInformation,
+          clarificationRound,
+        },
+        outcome,
+        responseStrategyVersion: "clarification-handoff-v1",
+      } satisfies ClarificationDecisionAudit;
+
+      if (incompleteRequest.requiresHumanHandoff) {
+        yield* attachClarificationDecisionAudit(
+          streamHumanHandoff(
+            analysis.language,
+            input.assistant,
+            incompleteRequest.missingInformation,
+          ),
+          audit,
+        );
+        return;
+      }
+
+      yield* attachClarificationDecisionAudit(
+        streamClarificationRequest(
+          analysis.language,
+          incompleteRequest.missingInformation,
+        ),
+        audit,
       );
       return;
     }
 
     yield* dependencies.streamKnowledgeResponse(analysis);
   })();
+}
+
+async function* attachClarificationDecisionAudit(
+  events:
+    | Iterable<AssistantResponseEvent>
+    | AsyncIterable<AssistantResponseEvent>,
+  audit: ClarificationDecisionAudit,
+): AsyncGenerator<AssistantResponseEvent> {
+  for await (const event of events) {
+    if (event.type === "complete") {
+      Object.defineProperty(event, responseDecisionAuditSymbol, {
+        value: audit,
+        enumerable: false,
+      });
+    }
+    yield event;
+  }
+}
+
+function* streamHumanHandoff(
+  language: RequestAnalysisLanguage,
+  assistant: RequestAnalysisInput["assistant"],
+  missingInformation: string[],
+): Generator<AssistantResponseEvent> {
+  if (
+    !assistant.humanContactLabel ||
+    !assistant.humanContactUrl
+  ) {
+    throw new Error("人工接续缺少已配置的联系入口");
+  }
+
+  const content = language === "en"
+    ? `The following information is still needed: ${missingInformation.join("; ")}. Please contact the human support team.`
+    : `目前仍缺少：${missingInformation.join("、")}。请联系人工团队协助。`;
+
+  yield {
+    type: "text_delta",
+    delta: content,
+  };
+  yield {
+    type: "complete",
+    resultType: "human_handoff",
+    citations: [],
+    contact: {
+      label: assistant.humanContactLabel,
+      url: assistant.humanContactUrl,
+    },
+  };
 }
 
 export function streamStructuredAssistantResponse(
@@ -396,12 +594,7 @@ function* streamClarificationRequest(
   language: RequestAnalysisLanguage,
   missingInformation: string[],
 ): Generator<AssistantResponseEvent> {
-  const details = missingInformation.join(
-    language === "en" ? "; " : "；",
-  );
-  const content = language === "en"
-    ? `Please clarify: ${details}.`
-    : `请补充：${details}。`;
+  const content = createClarificationContent(language, missingInformation);
 
   yield {
     type: "text_delta",
@@ -412,6 +605,18 @@ function* streamClarificationRequest(
     resultType: "clarification_request",
     citations: [],
   };
+}
+
+function createClarificationContent(
+  language: RequestAnalysisLanguage,
+  missingInformation: string[],
+) {
+  const details = missingInformation.join(
+    language === "en" ? "; " : "；",
+  );
+  return language === "en"
+    ? `Please clarify: ${details}.`
+    : `请补充：${details}。`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

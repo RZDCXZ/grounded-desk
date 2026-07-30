@@ -12,6 +12,7 @@ import {
 import { detectQuestionLanguage } from "./question-language.ts";
 import {
   responseDecisionAuditSymbol,
+  type AssistantDecisionAudit,
   type AuditedFactualRequest,
   type ResponseDecisionAudit,
 } from "./response-decision-audit.ts";
@@ -80,6 +81,15 @@ export type AssistantResponseEvent =
         | "conversational_response"
         | "clarification_request";
       citations: [];
+    }
+  | {
+      type: "complete";
+      resultType: "human_handoff";
+      citations: [];
+      contact: {
+        label: string;
+        url: string;
+      };
     };
 
 export type AiCallLog = {
@@ -360,7 +370,7 @@ export async function* streamGroundedAnswer(
 }
 
 export type AuditedAssistantResponseEvent = AssistantResponseEvent & {
-  [responseDecisionAuditSymbol]?: ResponseDecisionAudit;
+  [responseDecisionAuditSymbol]?: AssistantDecisionAudit;
 };
 
 export class EvidenceConflictRequiresMessageMappingError extends Error {

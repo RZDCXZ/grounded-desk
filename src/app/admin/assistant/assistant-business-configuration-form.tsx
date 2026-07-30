@@ -9,6 +9,7 @@ import {
   Send,
   ShieldCheck,
   UserCog,
+  UserCheck,
 } from "lucide-react";
 import {
   useActionState,
@@ -40,9 +41,15 @@ import {
   type AssistantTone,
 } from "@/lib/assistant/business-configuration";
 import type { ConversationResultType } from "@/lib/assistant/conversation-result";
-import type { GroundedCitation } from "@/lib/assistant/grounded-answer";
+import type {
+  ConversationContextMessage,
+  GroundedCitation,
+} from "@/lib/assistant/grounded-answer";
 import { consumeAssistantResponseStream } from "@/lib/assistant/response-stream";
 import { reduceAssistantResponsePresentation } from "@/lib/assistant/response-sections";
+import type {
+  ClarificationThreadState,
+} from "@/lib/assistant/response-decision-audit";
 import { cn } from "@/lib/utils";
 
 import {
@@ -76,7 +83,12 @@ type PreviewResult = PreviewResultBase &
         resultType: CompletedResultType;
       }
     | {
-        status: "idle" | "streaming" | "refusal" | "temporary_failure";
+        status:
+          | "idle"
+          | "streaming"
+          | "refusal"
+          | "handoff"
+          | "temporary_failure";
         resultType?: never;
       }
   );
@@ -586,6 +598,13 @@ function AssistantPreview({
     answer: "",
     citations: [],
   });
+  const [previewContext, setPreviewContext] = useState<
+    ConversationContextMessage[]
+  >([]);
+  const [
+    previewClarificationState,
+    setPreviewClarificationState,
+  ] = useState<ClarificationThreadState>();
   const requestController = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -605,6 +624,12 @@ function AssistantPreview({
     }
 
     const controller = new AbortController();
+    let completedContent = "";
+    let completedResultType: ConversationResultType | undefined;
+    let completedClarificationState:
+      | ClarificationThreadState
+      | undefined;
+    let messageCompleted = false;
     requestController.current?.abort();
     requestController.current = controller;
     setResult({
@@ -620,7 +645,11 @@ function AssistantPreview({
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ question: normalizedQuestion }),
+        body: JSON.stringify({
+          question: normalizedQuestion,
+          context: previewContext,
+          clarificationState: previewClarificationState,
+        }),
         signal: controller.signal,
       });
 
@@ -643,6 +672,15 @@ function AssistantPreview({
           return;
         }
 
+        if (streamEvent.type === "section_complete") {
+          completedContent = streamEvent.section.content;
+        } else if (streamEvent.type === "message_complete") {
+          messageCompleted = true;
+          completedResultType = streamEvent.resultType;
+          completedClarificationState =
+            streamEvent.clarificationState;
+        }
+
         setResult((current) => {
           const presentation = reduceAssistantResponsePresentation(
             current,
@@ -657,6 +695,26 @@ function AssistantPreview({
             : current;
         });
       });
+      if (completedResultType && completedContent) {
+        const additions: ConversationContextMessage[] = [
+          {
+            role: "visitor",
+            content: normalizedQuestion,
+            resultType: null,
+          },
+          {
+            role: "assistant",
+            content: completedContent,
+            resultType: completedResultType,
+          },
+        ];
+        setPreviewContext((current) =>
+          [...current, ...additions].slice(-6)
+        );
+      }
+      if (messageCompleted) {
+        setPreviewClarificationState(completedClarificationState);
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         return;
@@ -745,6 +803,8 @@ function AssistantPreview({
                     "min-w-0 flex-1 rounded-xl rounded-tl-sm border bg-card p-4",
                     result.status === "temporary_failure"
                       ? "border-danger/30 bg-danger-light"
+                      : result.status === "handoff"
+                        ? "border-info/30 bg-info-light"
                       : result.status === "refusal"
                         ? "border-warning/30 bg-warning-light"
                       : "border-line",
@@ -783,6 +843,26 @@ function AssistantPreview({
                           </Button>
                         ) : null}
                       </div>
+                    </>
+                  ) : result.status === "handoff" ? (
+                    <>
+                      <p className="flex items-center gap-2 text-[13px] font-medium text-info">
+                        <UserCheck aria-hidden="true" className="size-4" />
+                        需要人工协助确认
+                      </p>
+                      <p className="mt-1 text-[13px] leading-6 text-ink-600">
+                        {result.message}
+                      </p>
+                      {result.contact ? (
+                        <a
+                          className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-info/30 bg-card px-3 text-[13px] font-medium text-info transition-colors hover:bg-info-light"
+                          href={result.contact.url}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          {result.contact.label}
+                        </a>
+                      ) : null}
                     </>
                   ) : result.status === "refusal" ? (
                     <>
