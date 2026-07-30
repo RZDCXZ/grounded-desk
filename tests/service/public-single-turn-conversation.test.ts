@@ -12,7 +12,11 @@ const publicId = "00000000-0000-4000-8000-000000000301";
 const conversationId = "00000000-0000-4000-8000-000000000401";
 
 test("公开消息接口只使用公开助手 ID 推导组织并返回流式有据回答", async () => {
-  const started: Array<{ publicId: string; question: string }> = [];
+  const started: Array<{
+    publicId: string;
+    question: string;
+    usesAi: boolean;
+  }> = [];
   const answerInputs: PublicConversationStart[] = [];
   const outcomes: PublicConversationOutcome[] = [];
   const response = await createPublicConversationResponse(
@@ -21,6 +25,8 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
       body: JSON.stringify({
         question: "  你们提供什么服务？  ",
         organizationId: "client-controlled-organization",
+        usesAi: false,
+        resultType: "conversational_response",
       }),
       headers: {
         "content-type": "application/json",
@@ -28,8 +34,14 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
     }),
     publicId,
     {
-      async beginConversation(requestedPublicId, question) {
-        started.push({ publicId: requestedPublicId, question });
+      async beginConversation(
+        requestedPublicId,
+        question,
+        _conversationId,
+        _retry,
+        usesAi,
+      ) {
+        started.push({ publicId: requestedPublicId, question, usesAi });
         return publicConversationStart();
       },
       streamAnswer(start) {
@@ -38,6 +50,7 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
           { type: "text_delta", delta: "我们提供知识整理服务。" },
           {
             type: "complete",
+            resultType: "grounded_answer",
             citations: [
               {
                 knowledgeSourceId: "source-1",
@@ -67,7 +80,11 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
     publicConversationStart().assistantMessageId,
   );
   assert.deepEqual(started, [
-    { publicId, question: "你们提供什么服务？" },
+    {
+      publicId,
+      question: "你们提供什么服务？",
+      usesAi: true,
+    },
   ]);
   assert.deepEqual(answerInputs, [
     {
@@ -79,6 +96,7 @@ test("公开消息接口只使用公开助手 ID 推导组织并返回流式有�
     { type: "text_delta", delta: "我们提供知识整理服务。" },
     {
       type: "complete",
+      resultType: "grounded_answer",
       citations: [
         {
           knowledgeSourceId: "source-1",
@@ -150,7 +168,11 @@ test("公开消息接口在同一会话中传递有限近期上下文并返回�
         answerInputs.push(start);
         return answerEvents([
           { type: "text_delta", delta: "包含实施支持。" },
-          { type: "complete", citations: [] },
+          {
+            type: "complete",
+            resultType: "grounded_answer",
+            citations: [],
+          },
         ]);
       },
       async completeConversation() {},
@@ -218,7 +240,11 @@ test("公开消息接口把技术故障重试标记为重试而不是新问题",
       streamAnswer() {
         return answerEvents([
           { type: "text_delta", delta: "重试成功。" },
-          { type: "complete", citations: [] },
+          {
+            type: "complete",
+            resultType: "grounded_answer",
+            citations: [],
+          },
         ]);
       },
       async completeConversation() {},
@@ -378,6 +404,7 @@ test("可靠拒答与技术故障会写入对应的单轮会话历史", async ()
         return answerEvents([
           {
             type: "refusal",
+            resultType: "grounded_refusal",
             message: "当前可用知识不足以支持这个问题的事实性回答。",
             contact: {
               label: "联系业务团队",

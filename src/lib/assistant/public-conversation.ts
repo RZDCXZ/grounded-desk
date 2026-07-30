@@ -1,4 +1,5 @@
 import { createAssistantPreviewResponse } from "./preview-response.ts";
+import type { ConversationResultType } from "./conversation-result.ts";
 import type {
   ConversationContextMessage,
   GroundedAnswerEvent,
@@ -40,7 +41,7 @@ export type PublicConversationBlocked = {
 };
 
 export type PublicConversationOutcome = {
-  type: "grounded_answer" | "grounded_refusal";
+  type: ConversationResultType;
   content: string;
   citations: GroundedCitation[];
 };
@@ -49,8 +50,9 @@ type PublicConversationDependencies = {
   beginConversation(
     publicId: string,
     question: string,
-    conversationId?: string,
-    retry?: boolean,
+    conversationId: string | undefined,
+    retry: boolean | undefined,
+    usesAi: boolean,
   ): Promise<
     PublicConversationStart | PublicConversationBlocked | null
   >;
@@ -83,6 +85,7 @@ export async function createPublicConversationResponse(
     questionResult.question,
     questionResult.conversationId,
     questionResult.retry,
+    true,
   );
 
   if (!conversation) {
@@ -199,13 +202,13 @@ async function* persistConversationOutcome(
         answer += event.delta;
       } else if (event.type === "complete") {
         await dependencies.completeConversation(conversation, {
-          type: "grounded_answer",
+          type: event.resultType,
           content: answer,
           citations: event.citations,
         });
       } else {
         await dependencies.completeConversation(conversation, {
-          type: "grounded_refusal",
+          type: event.resultType,
           content: event.message,
           citations: [],
         });

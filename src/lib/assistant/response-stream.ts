@@ -1,22 +1,7 @@
-import type { GroundedCitation } from "./grounded-answer.ts";
+import type { GroundedAnswerEvent } from "./grounded-answer.ts";
 
 export type AssistantResponseStreamEvent =
-  | {
-      type: "text_delta";
-      delta: string;
-    }
-  | {
-      type: "complete";
-      citations: GroundedCitation[];
-    }
-  | {
-      type: "refusal";
-      message: string;
-      contact: {
-        label: string;
-        url: string;
-      };
-    }
+  | GroundedAnswerEvent
   | {
       type: "temporary_failure";
       reason: "input_rejected" | "rate_limited" | "provider_failure";

@@ -4,6 +4,7 @@ import {
   type ProviderCallResult,
   type ProviderErrorType,
 } from "../ai/provider-call.ts";
+import type { ConversationResultType } from "./conversation-result.ts";
 import { detectQuestionLanguage } from "./question-language.ts";
 
 export { ProviderCallError } from "../ai/provider-call.ts";
@@ -32,6 +33,7 @@ export type GroundedCitation = {
 export type ConversationContextMessage = {
   role: "visitor" | "assistant";
   content: string;
+  resultType?: ConversationResultType | null;
 };
 
 export type GroundedAnswerEvent =
@@ -41,6 +43,7 @@ export type GroundedAnswerEvent =
     }
   | {
       type: "refusal";
+      resultType: "grounded_refusal";
       message: string;
       contact: {
         label: string;
@@ -49,6 +52,7 @@ export type GroundedAnswerEvent =
     }
   | {
       type: "complete";
+      resultType: "grounded_answer";
       citations: GroundedCitation[];
     };
 
@@ -262,6 +266,7 @@ export async function* streamGroundedAnswer(
 
   yield {
     type: "complete",
+    resultType: "grounded_answer",
     citations: createCitations(evidence),
   };
 }
@@ -290,6 +295,7 @@ function createGroundedRefusal(
 ): GroundedAnswerEvent {
   return {
     type: "refusal",
+    resultType: "grounded_refusal",
     message: detectQuestionLanguage(question) === "en"
       ? "The currently available knowledge is insufficient to support a factual answer to this question."
       : "当前可用知识不足以支持这个问题的事实性回答。",

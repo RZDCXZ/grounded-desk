@@ -38,6 +38,7 @@ export async function POST(
       question,
       conversationId,
       retry,
+      usesAi,
     ) {
       const { data, error } = await supabase.rpc(
         "begin_public_conversation",
@@ -60,6 +61,7 @@ export async function POST(
             0,
             20,
           ),
+          request_uses_ai: usesAi ?? true,
         },
       );
 

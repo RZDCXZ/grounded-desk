@@ -154,6 +154,7 @@ test("预览问题经过召回、重排和流式生成后才展示服务端证�
     },
     {
       type: "complete",
+      resultType: "grounded_answer",
       citations: [
         {
           knowledgeSourceId: "source-b",
@@ -457,6 +458,7 @@ test("最终证据低于相关性门槛时可靠拒答且不调用回答模型",
   assert.deepEqual(events, [
     {
       type: "refusal",
+      resultType: "grounded_refusal",
       message: "当前可用知识不足以支持这个问题的事实性回答。",
       contact: {
         label: "联系业务团队",
@@ -487,6 +489,7 @@ test("最终证据恰好达到相关性门槛时生成有据回答", async () =>
     { type: "text_delta", delta: "我们提供知识整理服务。" },
     {
       type: "complete",
+      resultType: "grounded_answer",
       citations: [
         {
           knowledgeSourceId: "source-a",
@@ -638,6 +641,7 @@ test("召回没有候选内容单元时直接可靠拒答而不请求重排", as
   assert.deepEqual(events, [
     {
       type: "refusal",
+      resultType: "grounded_refusal",
       message: "当前可用知识不足以支持这个问题的事实性回答。",
       contact: {
         label: "联系业务团队",
