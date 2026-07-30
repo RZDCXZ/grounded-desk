@@ -1,4 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
+
+const organizationId = "00000000-0000-4000-8000-000000000101";
 
 type MailpitMessage = {
   ID: string;
@@ -78,6 +81,9 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await page
     .getByLabel("欢迎语")
     .fill("你好，我可以帮助你核查演示业务的服务与支持方式。");
+  await page.getByLabel("服务范围说明").fill("演示业务范围");
+  await page.getByText("专业", { exact: true }).click();
+  await expect(page.getByLabel("专业")).toBeChecked();
   await page.getByLabel("人工联系入口文案").fill("联系业务团队");
   await page
     .getByLabel("人工联系 URL")
@@ -86,6 +92,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await expect(page.getByRole("status")).toContainText("助手配置已保存");
 
   await page.getByRole("link", { name: "知识来源", exact: true }).click();
+  await disableAllKnowledgeSources(page);
   await page.getByRole("button", { name: "添加知识来源" }).click();
   await page
     .getByLabel("公开 HTTP/HTTPS 地址")
@@ -265,20 +272,27 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await page.unroute(publicMessagesPattern);
   await page.reload();
 
+  const administratorDataClient =
+    await createAdministratorDataClient();
+  const aiCallsBeforeConversational =
+    await readOrganizationAiCallTypes(administratorDataClient);
   await page.getByLabel("咨询问题").fill(conversationalQuestion);
   await page.getByRole("button", { name: "发送问题" }).click();
   await expect(
     page.getByText(/您好，我是演示业务顾问/),
   ).toBeVisible();
+  await expect
+    .poll(async () =>
+      (await readOrganizationAiCallTypes(administratorDataClient)).length,
+    )
+    .toBe(aiCallsBeforeConversational.length);
 
   const knowledgeControlPage = await context.newPage();
   await knowledgeControlPage.goto("/admin/knowledge-sources");
   const persistedSourceRow = knowledgeControlPage
     .getByRole("row")
     .filter({ hasText: sourceTitle });
-  await persistedSourceRow
-    .getByRole("button", { name: "停用" })
-    .click();
+  await disableAllKnowledgeSources(knowledgeControlPage);
   await expect(persistedSourceRow).toContainText("已停用");
   await page.reload();
 
@@ -290,6 +304,19 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
       { exact: true },
     ),
   ).toBeVisible();
+  const aiCallsAfterClarification =
+    await readOrganizationAiCallTypes(administratorDataClient);
+  const clarificationAiCalls = aiCallsAfterClarification.slice(
+    aiCallsBeforeConversational.length,
+  );
+  expect(clarificationAiCalls[0]).toBe("embedding");
+  expect(clarificationAiCalls).not.toContain("answer");
+  expect(
+    clarificationAiCalls.every(
+      (callType) =>
+        callType === "embedding" || callType === "rerank",
+    ),
+  ).toBe(true);
   await persistedSourceRow
     .getByRole("button", { name: "重新启用" })
     .click();
@@ -348,6 +375,14 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await expect(
     page.getByRole("group", { name: "评价这条助手回答" }),
   ).toBeVisible();
+  const aiCallsBeforeGroundedAnswer = aiCallsAfterClarification.length;
+  await expect
+    .poll(async () =>
+      (await readOrganizationAiCallTypes(administratorDataClient)).slice(
+        aiCallsBeforeGroundedAnswer,
+      ),
+    )
+    .toEqual(["embedding", "rerank", "answer"]);
   await page.getByRole("button", { name: "没帮助" }).click();
   await expect(page.getByRole("status")).toContainText(
     "已记录，感谢反馈",
@@ -930,23 +965,7 @@ test("管理员补充知识后已发布助手立即改进回答并解决问题",
 
   await signInAsAdministrator(page, request);
   await page.goto("/admin/knowledge-sources");
-  const disableSourceButtons = page.getByRole("button", {
-    name: "停用",
-    exact: true,
-  });
-  while ((await disableSourceButtons.count()) > 0) {
-    const disabledSourceCount = await page
-      .getByRole("button", { name: "重新启用", exact: true })
-      .count();
-    await disableSourceButtons.first().click();
-    await expect
-      .poll(() =>
-        page
-          .getByRole("button", { name: "重新启用", exact: true })
-          .count(),
-      )
-      .toBe(disabledSourceCount + 1);
-  }
+  await disableAllKnowledgeSources(page);
 
   await page.goto("/admin/assistant");
   const publishButton = page.getByRole("button", {
@@ -1039,4 +1058,87 @@ function rectanglesOverlap(
     first.y + first.height <= second.y ||
     second.y + second.height <= first.y
   );
+}
+
+async function disableAllKnowledgeSources(page: Page) {
+  const disableSourceButtons = page.getByRole("button", {
+    name: "停用",
+    exact: true,
+  });
+  while ((await disableSourceButtons.count()) > 0) {
+    const disabledSourceCount = await page
+      .getByRole("button", { name: "重新启用", exact: true })
+      .count();
+    await disableSourceButtons.first().click();
+    await expect
+      .poll(() =>
+        page
+          .getByRole("button", {
+            name: "重新启用",
+            exact: true,
+          })
+          .count(),
+      )
+      .toBe(disabledSourceCount + 1);
+  }
+}
+
+async function createAdministratorDataClient() {
+  if (!process.env.SUPABASE_SECRET_KEY) {
+    process.loadEnvFile(".env.local");
+  }
+
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
+  const publishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH";
+  expect(secretKey).toBeTruthy();
+
+  const privilegedClient = createClient(url, secretKey!, {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
+    },
+  });
+  const { data: linkData, error: linkError } =
+    await privilegedClient.auth.admin.generateLink({
+      email: "admin@groundeddesk.local",
+      type: "magiclink",
+    });
+  expect(linkError).toBeNull();
+  const hashedToken = linkData.properties?.hashed_token;
+  expect(hashedToken).toBeTruthy();
+
+  const administratorClient = createClient(url, publishableKey, {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
+    },
+  });
+  const { error: verifyError } = await administratorClient.auth.verifyOtp({
+    token_hash: hashedToken!,
+    type: "email",
+  });
+  expect(verifyError).toBeNull();
+  return administratorClient;
+}
+
+async function readOrganizationAiCallTypes(
+  administratorClient: Awaited<
+    ReturnType<typeof createAdministratorDataClient>
+  >,
+) {
+  const { data, error } = await administratorClient
+    .from("ai_call_logs")
+    .select("call_type, created_at, id")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+
+  expect(error).toBeNull();
+  return (data ?? []).map(({ call_type }) => call_type as string);
 }

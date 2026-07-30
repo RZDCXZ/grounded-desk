@@ -440,6 +440,65 @@ test("明显英文问候使用英文受控模板", async () => {
 
 for (const scenario of [
   {
+    question: "再见",
+    name: "演示业务顾问",
+    serviceScope: "演示业务范围",
+    expected:
+      "再见。需要了解演示业务范围时，欢迎随时回来咨询。",
+  },
+  {
+    question: "Thank you",
+    name: "Demo Advisor",
+    serviceScope: "account services",
+    expected:
+      "You're welcome. I can continue to help if you'd like to learn more about account services.",
+  },
+  {
+    question: "Who are you?",
+    name: "Demo Advisor",
+    serviceScope: "account services",
+    expected:
+      "I'm Demo Advisor, an assistant for questions about account services.",
+  },
+  {
+    question: "你能做什么？",
+    name: "演示业务顾问",
+    serviceScope: "演示业务范围",
+    expected: "我可以协助您了解演示业务范围。",
+  },
+  {
+    question: "Please write me some Python code",
+    name: "Demo Advisor",
+    serviceScope: "account services",
+    expected:
+      "Sorry, I can't handle that request. I can assist with account services.",
+  },
+] as const) {
+  test(`公开交流验收矩阵覆盖语言配对：${scenario.question}`, async () => {
+    const result = await runRoutedQuestion(scenario.question, {
+      name: scenario.name,
+      serviceScope: scenario.serviceScope,
+    });
+
+    assert.deepEqual(result.events, [
+      {
+        type: "text_delta",
+        delta: scenario.expected,
+      },
+      {
+        type: "complete",
+        resultType: "conversational_response",
+        citations: [],
+      },
+    ]);
+    assert.deepEqual(result.usesAi, [false]);
+    assert.equal(result.knowledgeCalls, 0);
+    assert.equal(result.outcomes[0]?.type, "conversational_response");
+  });
+}
+
+for (const scenario of [
+  {
     question: "Hi，你好",
     expected:
       "您好，我是演示业务顾问。您可以咨询演示业务范围。",
@@ -501,6 +560,80 @@ for (const question of [
     assert.equal(result.outcomes[0]?.type, "grounded_refusal");
   });
 }
+
+test("服务端分类让交流性回应在 AI 预算耗尽后仍通过公开边界返回", async () => {
+  const usesAiClassifications: boolean[] = [];
+  let knowledgeCalls = 0;
+  const dependencies = {
+    async beginConversation(
+      _requestedPublicId: string,
+      _question: string,
+      _conversationId: string | undefined,
+      _retry: boolean | undefined,
+      usesAi: boolean,
+    ): Promise<PublicConversationStart | {
+      blockedReason: "daily_budget";
+      conversationId: string;
+      contact: { label: string; url: string };
+    }> {
+      usesAiClassifications.push(usesAi);
+      return usesAi
+        ? {
+            blockedReason: "daily_budget",
+            conversationId,
+            contact: {
+              label: "联系业务团队",
+              url: "https://example.com/contact",
+            },
+          }
+        : publicConversationStart();
+    },
+    streamAnswer() {
+      knowledgeCalls += 1;
+      return answerEvents([]);
+    },
+    async completeConversation() {},
+    async failConversation() {
+      assert.fail("预算场景不应保存技术故障");
+    },
+  };
+
+  const conversationalResponse = await createPublicConversationResponse(
+    questionRequest("你好"),
+    publicId,
+    dependencies,
+  );
+  assert.deepEqual(await readNdjson(conversationalResponse), [
+    {
+      type: "text_delta",
+      delta: "您好，我是演示业务顾问。您可以咨询演示业务范围。",
+    },
+    {
+      type: "complete",
+      resultType: "conversational_response",
+      citations: [],
+    },
+  ]);
+
+  const knowledgeResponse = await createPublicConversationResponse(
+    questionRequest("你们提供什么服务？"),
+    publicId,
+    dependencies,
+  );
+  assert.equal(knowledgeResponse.status, 503);
+  assert.deepEqual(await knowledgeResponse.json(), {
+    code: "daily_budget",
+    message: "今日 AI 咨询额度已用完，请通过人工联系入口继续咨询。",
+    conversationId,
+    canStartNewConversation: false,
+    contact: {
+      label: "联系业务团队",
+      url: "https://example.com/contact",
+    },
+  });
+  assert.deepEqual(usesAiClassifications, [false, true]);
+  assert.equal(knowledgeCalls, 0);
+});
 
 test("公开消息接口在同一会话中传递有限近期上下文并返回会话标识", async () => {
   const beginInputs: Array<{
