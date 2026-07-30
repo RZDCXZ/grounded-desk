@@ -145,6 +145,8 @@ export function isAllowedHumanContactUrl(value: string) {
   }
 }
 
-function isAssistantTone(value: string): value is AssistantTone {
+export function isAssistantTone(
+  value: string,
+): value is AssistantTone {
   return assistantTones.some((tone) => tone === value);
 }

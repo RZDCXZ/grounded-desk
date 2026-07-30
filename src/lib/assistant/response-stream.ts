@@ -1,7 +1,7 @@
-import type { GroundedAnswerEvent } from "./grounded-answer.ts";
+import type { AssistantResponseEvent } from "./grounded-answer.ts";
 
 export type AssistantResponseStreamEvent =
-  | GroundedAnswerEvent
+  | AssistantResponseEvent
   | {
       type: "temporary_failure";
       reason: "input_rejected" | "rate_limited" | "provider_failure";

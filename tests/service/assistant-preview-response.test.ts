@@ -2,7 +2,61 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ProviderCallError } from "../../src/lib/assistant/grounded-answer.ts";
+import {
+  routeConversationInput,
+  streamRoutedAssistantResponse,
+} from "../../src/lib/assistant/conversational-response.ts";
 import { createAssistantPreviewResponse } from "../../src/lib/assistant/preview-response.ts";
+
+test("预览 HTTP 流对高置信交流输入使用受控回应且不调用知识回答", async () => {
+  let knowledgeCalls = 0;
+  const question = "Hello!";
+  const response = createAssistantPreviewResponse(
+    streamRoutedAssistantResponse({
+      question,
+      route: routeConversationInput(question),
+      assistant: {
+        name: "Demo Advisor",
+        serviceScope: "account services",
+        tone: "professional",
+      },
+      streamKnowledgeAnswer: () => {
+        knowledgeCalls += 1;
+        return (async function* () {
+          yield {
+            type: "refusal" as const,
+            resultType: "grounded_refusal" as const,
+            message: "This knowledge path must not run.",
+            contact: {
+              label: "Contact us",
+              url: "https://example.com/contact",
+            },
+          };
+        })();
+      },
+    }),
+    {
+      label: "Contact us",
+      url: "https://example.com/contact",
+    },
+    "en",
+  );
+
+  assert.equal(knowledgeCalls, 0);
+  assert.deepEqual(await readNdjson(response), [
+    {
+      type: "text_delta",
+      delta:
+        "Hello, I'm Demo Advisor. You can ask me about account services.",
+    },
+    {
+      type: "complete",
+      resultType: "conversational_response",
+      citations: [],
+    },
+  ]);
+  assert.equal(knowledgeCalls, 0);
+});
 
 test("预览 HTTP 流将供应商超时映射为可重试技术故障而非可靠拒答", async () => {
   const response = createAssistantPreviewResponse(

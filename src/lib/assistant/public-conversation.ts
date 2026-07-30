@@ -1,6 +1,11 @@
 import { createAssistantPreviewResponse } from "./preview-response.ts";
 import type { ConversationResultType } from "./conversation-result.ts";
+import {
+  routeConversationInput,
+  streamRoutedAssistantResponse,
+} from "./conversational-response.ts";
 import type {
+  AssistantResponseEvent,
   ConversationContextMessage,
   GroundedAnswerEvent,
   GroundedCitation,
@@ -80,12 +85,13 @@ export async function createPublicConversationResponse(
     );
   }
 
+  const inputRoute = routeConversationInput(questionResult.question);
   const conversation = await dependencies.beginConversation(
     publicId,
     questionResult.question,
     questionResult.conversationId,
     questionResult.retry,
-    true,
+    inputRoute.type === "knowledge",
   );
 
   if (!conversation) {
@@ -107,12 +113,19 @@ export async function createPublicConversationResponse(
     );
   }
 
-  const response = createAssistantPreviewResponse(
-    persistConversationOutcome(
+  const events = streamRoutedAssistantResponse({
+    question: questionResult.question,
+    route: inputRoute,
+    assistant: conversation.assistant,
+    streamKnowledgeAnswer: () =>
       dependencies.streamAnswer({
         ...conversation,
         question: questionResult.question,
       }),
+  });
+  const response = createAssistantPreviewResponse(
+    persistConversationOutcome(
+      events,
       conversation,
       dependencies,
     ),
@@ -190,7 +203,7 @@ function createBlockedResponse(
 }
 
 async function* persistConversationOutcome(
-  events: AsyncIterable<GroundedAnswerEvent>,
+  events: AsyncIterable<AssistantResponseEvent>,
   conversation: PublicConversationStart,
   dependencies: PublicConversationDependencies,
 ) {

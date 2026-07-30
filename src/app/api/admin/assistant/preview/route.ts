@@ -1,4 +1,8 @@
 import { streamGroundedAnswer } from "@/lib/assistant/grounded-answer";
+import {
+  routeConversationInput,
+  streamRoutedAssistantResponse,
+} from "@/lib/assistant/conversational-response";
 import { createAssistantPreviewResponse } from "@/lib/assistant/preview-response";
 import { createSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
 import { requireAdministrator } from "@/lib/auth/require-admin";
@@ -31,21 +35,30 @@ export async function POST(request: Request) {
     );
   }
 
+  const assistantConfiguration = {
+    name: assistant.name,
+    serviceScope: assistant.service_scope,
+    tone: assistant.tone,
+    humanContactLabel: assistant.human_contact_label,
+    humanContactUrl: assistant.human_contact_url,
+  };
+  const question = questionResult.question;
+
   return createAssistantPreviewResponse(
-    streamGroundedAnswer(
-      {
-        organizationId: organization.id,
-        question: questionResult.question,
-        assistant: {
-          name: assistant.name,
-          serviceScope: assistant.service_scope,
-          tone: assistant.tone,
-          humanContactLabel: assistant.human_contact_label,
-          humanContactUrl: assistant.human_contact_url,
-        },
-      },
-      createSupabaseGroundedAnswerDependencies(supabase),
-    ),
+    streamRoutedAssistantResponse({
+      question,
+      route: routeConversationInput(question),
+      assistant: assistantConfiguration,
+      streamKnowledgeAnswer: () =>
+        streamGroundedAnswer(
+          {
+            organizationId: organization.id,
+            question,
+            assistant: assistantConfiguration,
+          },
+          createSupabaseGroundedAnswerDependencies(supabase),
+        ),
+    }),
     {
       label: assistant.human_contact_label,
       url: assistant.human_contact_url,

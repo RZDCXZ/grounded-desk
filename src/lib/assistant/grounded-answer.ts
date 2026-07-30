@@ -56,6 +56,16 @@ export type GroundedAnswerEvent =
       citations: GroundedCitation[];
     };
 
+export type AssistantResponseEvent =
+  | GroundedAnswerEvent
+  | {
+      type: "complete";
+      resultType:
+        | "conversational_response"
+        | "clarification_request";
+      citations: [];
+    };
+
 export type AiCallLog = {
   organizationId: string;
   callType: "embedding" | "rerank" | "answer";
