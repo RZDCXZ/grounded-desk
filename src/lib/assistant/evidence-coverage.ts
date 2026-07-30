@@ -99,7 +99,7 @@ export async function decideEvidenceCoverage(
     } catch (error) {
       finalError = error;
       await recordFailedCoverageCall(
-        input.organizationId,
+        input,
         dependencies,
         error,
       );
@@ -109,6 +109,7 @@ export async function decideEvidenceCoverage(
     try {
       await dependencies.callLogger.record({
         organizationId: input.organizationId,
+        factualRequestId: input.factualRequestId,
         callType: "evidence_coverage",
         provider: dependencies.provider.provider,
         model: dependencies.provider.model,
@@ -248,7 +249,7 @@ function validateCoverageDecision(
 }
 
 function createFailedCoverageLog(
-  organizationId: string,
+  input: EvidenceCoverageInput,
   dependencies: EvidenceCoverageDependencies,
   error: unknown,
 ): AiCallLog {
@@ -263,7 +264,8 @@ function createFailedCoverageLog(
         };
 
   return {
-    organizationId,
+    organizationId: input.organizationId,
+    factualRequestId: input.factualRequestId,
     callType: "evidence_coverage",
     provider: dependencies.provider.provider,
     model: dependencies.provider.model,
@@ -278,13 +280,13 @@ function createFailedCoverageLog(
 }
 
 async function recordFailedCoverageCall(
-  organizationId: string,
+  input: EvidenceCoverageInput,
   dependencies: EvidenceCoverageDependencies,
   error: unknown,
 ) {
   try {
     await dependencies.callLogger.record(
-      createFailedCoverageLog(organizationId, dependencies, error),
+      createFailedCoverageLog(input, dependencies, error),
     );
   } catch {
     // The provider error remains authoritative for retry and diagnosis.

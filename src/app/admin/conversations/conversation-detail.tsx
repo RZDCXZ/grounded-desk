@@ -73,6 +73,7 @@ type FactualRequestReview = {
   missing_information: string[];
   clarification_round: 0 | 1 | 2;
   request_analysis_version: string;
+  coverage_decision_version: string | null;
   response_strategy_version: string;
   response_content: string | null;
   response_status:
@@ -89,9 +90,28 @@ type EvidenceSnapshotReview = {
   content_unit_id: string;
   source_title: string;
   source_url: string | null;
+  relationship: "supports" | "conflicts";
   exact_excerpt: string;
   decision_reason: string;
   coverage_decision_version: string;
+};
+type AiCallReview = {
+  id: string;
+  assistant_message_id: string | null;
+  factual_request_id: string | null;
+  call_type:
+    | "request_analysis"
+    | "evidence_coverage"
+    | "embedding"
+    | "rerank"
+    | "answer";
+  provider: string;
+  model: string;
+  duration_ms: number;
+  outcome: "success" | "error";
+  error_type: string | null;
+  trace_id: string;
+  created_at: string;
 };
 
 export async function ConversationDetail({
@@ -122,6 +142,7 @@ export async function ConversationDetail({
     questionsResult,
     factualRequestsResult,
     evidenceSnapshotsResult,
+    callLogsResult,
   ] =
     await Promise.all([
       supabase
@@ -151,7 +172,7 @@ export async function ConversationDetail({
       supabase
         .from("message_factual_requests")
         .select(
-          "id, assistant_message_id, request_order, original_text, normalized_question, completeness, coverage_status, missing_information, clarification_round, request_analysis_version, response_strategy_version, response_content, response_status",
+          "id, assistant_message_id, request_order, original_text, normalized_question, completeness, coverage_status, missing_information, clarification_round, request_analysis_version, coverage_decision_version, response_strategy_version, response_content, response_status",
         )
         .eq("organization_id", organization.id)
         .eq("conversation_id", conversationId)
@@ -159,12 +180,20 @@ export async function ConversationDetail({
       supabase
         .from("evidence_snapshots")
         .select(
-          "id, factual_request_id, content_unit_id, source_title, source_url, exact_excerpt, decision_reason, coverage_decision_version",
+          "id, factual_request_id, content_unit_id, source_title, source_url, relationship, exact_excerpt, decision_reason, coverage_decision_version",
         )
         .eq("organization_id", organization.id)
         .eq("conversation_id", conversationId)
-        .eq("relationship", "conflicts")
         .order("created_at", { ascending: true }),
+      supabase
+        .from("ai_call_logs")
+        .select(
+          "id, assistant_message_id, factual_request_id, call_type, provider, model, duration_ms, outcome, error_type, trace_id, created_at",
+        )
+        .eq("organization_id", organization.id)
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
     ]);
   const readError =
     messagesResult.error ??
@@ -172,7 +201,8 @@ export async function ConversationDetail({
     feedbackResult.error ??
     questionsResult.error ??
     factualRequestsResult.error ??
-    evidenceSnapshotsResult.error;
+    evidenceSnapshotsResult.error ??
+    callLogsResult.error;
 
   if (readError) {
     throw new Error("暂时无法读取会话上下文", { cause: readError });
@@ -186,11 +216,13 @@ export async function ConversationDetail({
     (factualRequestsResult.data ?? []) as FactualRequestReview[];
   const evidenceSnapshots =
     (evidenceSnapshotsResult.data ?? []) as EvidenceSnapshotReview[];
+  const callLogs = (callLogsResult.data ?? []) as AiCallReview[];
   const selectedQuestion = linkedQuestions.find(
     ({ id }) => id === highlightedQuestionId,
   );
   const transcript = (
     <ConversationTranscript
+      callLogs={callLogs}
       citations={citations}
       feedback={feedback}
       evidenceSnapshots={evidenceSnapshots}
@@ -270,6 +302,7 @@ export async function ConversationDetail({
 }
 
 function ConversationTranscript({
+  callLogs,
   citations,
   feedback,
   evidenceSnapshots,
@@ -278,6 +311,7 @@ function ConversationTranscript({
   messages,
   selectedQuestion,
 }: {
+  callLogs: AiCallReview[];
   citations: Citation[];
   feedback: Feedback[];
   evidenceSnapshots: EvidenceSnapshotReview[];
@@ -295,6 +329,10 @@ function ConversationTranscript({
             <VisitorMessage key={message.id} message={message} />
           ) : (
             <AssistantMessage
+              callLogs={callLogs.filter(
+                ({ assistant_message_id }) =>
+                  assistant_message_id === message.id,
+              )}
               citations={citations.filter(
                 ({ message_id }) => message_id === message.id,
               )}
@@ -341,6 +379,7 @@ function VisitorMessage({ message }: { message: Message }) {
 }
 
 function AssistantMessage({
+  callLogs,
   citations,
   evidenceSnapshots,
   factualRequests,
@@ -349,6 +388,7 @@ function AssistantMessage({
   linkedQuestions,
   message,
 }: {
+  callLogs: AiCallReview[];
   citations: Citation[];
   evidenceSnapshots: EvidenceSnapshotReview[];
   factualRequests: FactualRequestReview[];
@@ -501,44 +541,25 @@ function AssistantMessage({
                 />
               ))}
             </div>
-            {factualRequest ? (
-              <details className="mt-3 rounded-lg border border-line bg-paper">
-                <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-ink-600">
-                  查看冲突判定审计
-                </summary>
-                <div className="border-t border-line px-3 py-3 text-[10px] leading-5 text-ink-600">
-                  <div className="mono">
-                    <p>
-                      规范化诉求：{factualRequest.normalized_question}
-                    </p>
-                    <p>
-                      覆盖状态：{factualRequest.coverage_status} ·
-                      请求分析：{factualRequest.request_analysis_version}
-                    </p>
-                    <p>
-                      响应策略：{factualRequest.response_strategy_version}
-                    </p>
-                  </div>
-                  <ul className="mt-3 space-y-2">
-                    {evidenceSnapshots.map((snapshot) => (
-                      <li key={snapshot.id}>
-                        <p className="font-semibold text-ink-900">
-                          {snapshot.source_title}
-                        </p>
-                        <p>
-                          审计说明：{snapshot.decision_reason}
-                        </p>
-                        <p className="mono text-ink-400">
-                          覆盖判定版本{" "}
-                          {snapshot.coverage_decision_version}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </details>
-            ) : null}
           </div>
+        ) : null}
+
+        {factualRequests.length > 0 ? (
+          <DecisionAudit
+            callLogs={callLogs}
+            evidenceSnapshots={evidenceSnapshots}
+            factualRequests={factualRequests}
+            linkedQuestions={linkedQuestions}
+            message={message}
+          />
+        ) : null}
+
+        {factualRequests.length === 0 && callLogs.length > 0 ? (
+          <ProcessingStageAudit
+            callLogs={callLogs}
+            factualRequests={factualRequests}
+            mappingReason={messageMappingReason(message.message_type)}
+          />
         ) : null}
 
         {canHaveReviewMetadata && feedback ? (
@@ -657,12 +678,14 @@ function MultiRequestReviewSections({
           ({ factual_request_id }) => factual_request_id === request.id,
         );
         const requestSnapshots = evidenceSnapshots.filter(
-          ({ factual_request_id }) => factual_request_id === request.id,
+          ({ factual_request_id, relationship }) =>
+            factual_request_id === request.id &&
+            relationship === "conflicts",
         );
         const requestQuestion = linkedQuestions.find(
           ({ factual_request_id }) => factual_request_id === request.id,
         );
-        const presentation = requestReviewPresentation(request);
+        const presentation = getRequestReviewStatus(request);
 
         return (
           <section
@@ -723,7 +746,7 @@ function MultiRequestReviewSections({
 
             {requestQuestion ? (
               <Link
-                className="mt-3 inline-flex text-[11px] font-semibold text-warning hover:underline"
+                className="mt-3 inline-flex min-h-10 items-center text-[11px] font-semibold text-warning hover:underline"
                 href={`/admin/unresolved-questions?status=${requestQuestion.status}&question=${requestQuestion.id}`}
               >
                 查看此诉求的
@@ -738,31 +761,306 @@ function MultiRequestReviewSections({
   );
 }
 
-function requestReviewPresentation(request: FactualRequestReview) {
+function DecisionAudit({
+  callLogs,
+  evidenceSnapshots,
+  factualRequests,
+  linkedQuestions,
+  message,
+}: {
+  callLogs: AiCallReview[];
+  evidenceSnapshots: EvidenceSnapshotReview[];
+  factualRequests: FactualRequestReview[];
+  linkedQuestions: LinkedQuestion[];
+  message: Message;
+}) {
+  const regionLabel = factualRequests.length === 1
+    ? `事实诉求 ${factualRequests[0]?.request_order ?? 1} 决策审计`
+    : "结构化决策审计";
+
+  return (
+    <details className="mt-4 rounded-lg border border-line bg-paper">
+      <summary className="flex min-h-10 cursor-pointer items-center px-3 text-[11px] font-semibold text-ink-600">
+        决策审计
+      </summary>
+      <div
+        aria-label={regionLabel}
+        className="space-y-4 border-t border-line px-3 py-3"
+        role="region"
+      >
+        {factualRequests.map((request) => {
+          const reviewStatus = getRequestReviewStatus(request);
+          const snapshots = evidenceSnapshots.filter(
+            ({ factual_request_id }) => factual_request_id === request.id,
+          );
+          const requestQuestions = linkedQuestions.filter(
+            ({ factual_request_id }) => factual_request_id === request.id,
+          );
+
+          return (
+            <section
+              aria-label={`事实诉求 ${request.request_order}`}
+              className="rounded-lg border border-line bg-card p-3"
+              key={request.id}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="text-[12px] font-semibold text-forest-950">
+                  {request.request_order}. {request.original_text}
+                </p>
+                <p className="text-[10px] font-semibold text-ink-600">
+                  {request.completeness === "complete" ? "完整" : "不完整"}
+                  {" · "}
+                  {reviewStatus.auditLabel}
+                </p>
+              </div>
+              <p className="mt-2 text-[11px] text-ink-600">
+                规范化诉求：{request.normalized_question}
+              </p>
+              {snapshots.length > 0 ? (
+                <ul className="mt-3 space-y-2">
+                  {snapshots.map((snapshot) => (
+                    <li
+                      className="rounded-md border border-line bg-paper p-3 text-[11px] leading-5 text-ink-600"
+                      key={snapshot.id}
+                    >
+                      <p className="font-semibold text-ink-900">
+                        {snapshot.source_title}
+                      </p>
+                      <p className="mono mt-1 break-all text-[9px] text-ink-400">
+                        知识快照 {snapshot.content_unit_id}
+                      </p>
+                      <blockquote className="mt-2 border-l-2 border-line-strong pl-3">
+                        {snapshot.exact_excerpt}
+                      </blockquote>
+                      <p className="mt-2">
+                        证据关系：
+                        {snapshot.relationship === "supports"
+                          ? "支持"
+                          : "冲突"}
+                      </p>
+                      <p>审计说明：{snapshot.decision_reason}</p>
+                      <p className="mono mt-1 text-[9px] text-ink-400">
+                        覆盖判定器 {snapshot.coverage_decision_version}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-[11px] text-ink-400">
+                  此诉求没有采用证据片段。
+                </p>
+              )}
+              <div className="mono mt-3 space-y-1 text-[9px] text-ink-400">
+                <p>请求分析器 {request.request_analysis_version}</p>
+                <p>
+                  覆盖判定器{" "}
+                  {request.coverage_decision_version ??
+                    "历史消息未保存"}
+                </p>
+                <p>响应策略 {request.response_strategy_version}</p>
+              </div>
+              {requestQuestions.length > 0 ? (
+                <div className="mt-3 space-y-2 border-t border-line pt-3">
+                  {requestQuestions.map((question) => (
+                    <LinkedQuestionAuditLink
+                      key={question.id}
+                      question={question}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+        {linkedQuestions.some(
+          ({ factual_request_id }) => factual_request_id === null,
+        ) ? (
+          <div className="space-y-2 rounded-lg border border-line bg-card p-3">
+            <p className="text-[11px] font-semibold text-ink-600">
+              消息级质量结果
+            </p>
+            {linkedQuestions
+              .filter(
+                ({ factual_request_id }) => factual_request_id === null,
+              )
+              .map((question) => (
+                <LinkedQuestionAuditLink
+                  key={question.id}
+                  question={question}
+                />
+              ))}
+          </div>
+        ) : null}
+        <p className="text-[11px] font-medium text-ink-600">
+          消息映射：{messageMappingReason(message.message_type)}
+        </p>
+        {callLogs.length > 0 ? (
+          <ProcessingStageAudit
+            callLogs={callLogs}
+            factualRequests={factualRequests}
+          />
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function ProcessingStageAudit({
+  callLogs,
+  factualRequests,
+  mappingReason,
+}: {
+  callLogs: AiCallReview[];
+  factualRequests: FactualRequestReview[];
+  mappingReason?: string;
+}) {
+  return (
+    <section
+      aria-label="处理阶段审计"
+      className="rounded-lg border border-line bg-card p-3"
+      role="region"
+    >
+      <p className="text-[11px] font-semibold text-ink-600">
+        处理阶段
+      </p>
+      <ol className="mt-2 space-y-2">
+        {callLogs.map((call) => {
+          const request = factualRequests.find(
+            ({ id }) => id === call.factual_request_id,
+          );
+
+          return (
+            <li
+              className="rounded-md border border-line bg-paper p-2.5 text-[10px] leading-5 text-ink-600"
+              key={call.id}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-ink-900">
+                  {aiCallTypeLabel(call.call_type)}
+                  {request ? ` · 诉求 ${request.request_order}` : ""}
+                </span>
+                <span
+                  className={call.outcome === "success"
+                    ? "font-semibold text-success"
+                    : "font-semibold text-danger"}
+                >
+                  {call.outcome === "success" ? "成功" : "失败"}
+                </span>
+              </div>
+              <p>
+                {call.provider} / {call.model} · {call.duration_ms} ms
+              </p>
+              {call.error_type ? (
+                <p className="text-danger">
+                  错误类型：{call.error_type}
+                </p>
+              ) : null}
+              <p className="mono break-all text-[9px] text-ink-400">
+                追踪 ID：{call.trace_id}
+              </p>
+            </li>
+          );
+        })}
+      </ol>
+      {mappingReason ? (
+        <p className="mt-3 border-t border-line pt-3 text-[11px] font-medium text-ink-600">
+          消息映射：{mappingReason}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function aiCallTypeLabel(callType: AiCallReview["call_type"]) {
+  const labels: Record<AiCallReview["call_type"], string> = {
+    request_analysis: "请求分析",
+    embedding: "问题向量",
+    rerank: "重排",
+    evidence_coverage: "证据覆盖",
+    answer: "回答生成",
+  };
+
+  return labels[callType];
+}
+
+function LinkedQuestionAuditLink({
+  question,
+}: {
+  question: LinkedQuestion;
+}) {
+  return (
+    <Link
+      className="flex min-h-10 flex-wrap items-center justify-between gap-2 text-[11px] text-warning hover:underline"
+      href={`/admin/unresolved-questions?status=${question.status}&question=${question.id}`}
+    >
+      <span>{linkedQuestionTriggerLabel(question.trigger_type)}</span>
+      <span>{question.status === "pending" ? "待处理" : "已解决"}</span>
+    </Link>
+  );
+}
+
+function linkedQuestionTriggerLabel(
+  triggerType: LinkedQuestion["trigger_type"],
+) {
+  const labels: Record<LinkedQuestion["trigger_type"], string> = {
+    grounded_refusal: "可靠拒答",
+    negative_feedback: "没帮助（回答质量）",
+    unsupported_factual_request: "无支持",
+    knowledge_conflict: "知识冲突",
+  };
+
+  return labels[triggerType];
+}
+
+function getRequestReviewStatus(request: FactualRequestReview) {
   if (request.coverage_status === "supported") {
     return {
+      auditLabel: "已支持",
       label: "已回答",
       className: "border-success/25 bg-success-light text-success",
     };
   }
   if (request.coverage_status === "unsupported") {
     return {
+      auditLabel: "无支持",
       label: "暂无法确认",
       className: "border-warning/25 bg-warning-light text-warning",
     };
   }
   if (request.coverage_status === "conflicting") {
     return {
+      auditLabel: "知识冲突",
       label: "知识存在冲突",
       className: "border-warning/25 bg-warning-light text-warning",
     };
   }
   return {
+    auditLabel: request.response_status === "handoff"
+      ? "人工接续"
+      : "待澄清",
     label: request.response_status === "handoff"
       ? "需要人工协助"
       : "需要补充信息",
     className: "border-info/25 bg-info-light text-info",
   };
+}
+
+function messageMappingReason(messageType: MessageType) {
+  const reasons: Partial<Record<MessageType, string>> = {
+    grounded_answer: "全部事实诉求均获得支持",
+    partially_grounded_answer:
+      "至少一项事实诉求获得支持，且另有未支持或未完成诉求",
+    knowledge_conflict:
+      "没有可直接回答的诉求，且至少一项存在知识冲突",
+    grounded_refusal: "完整事实诉求均未获得证据支持",
+    clarification_request: "事实诉求尚不完整且未达到两轮澄清上限",
+    human_handoff: "事实诉求在两轮澄清后仍不完整",
+    conversational_response:
+      "请求分析未识别出事实诉求，并映射为受控交流性回应",
+    technical_failure: "必要处理阶段失败，保留为技术故障",
+  };
+
+  return reasons[messageType] ?? "该结果不包含事实诉求决策";
 }
 
 function ResultHeading({

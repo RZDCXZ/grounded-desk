@@ -288,6 +288,7 @@ function FeedbackLabel({
 }) {
   if (
     resultType !== "grounded_answer" &&
+    resultType !== "partially_grounded_answer" &&
     resultType !== "grounded_refusal"
   ) {
     return null;

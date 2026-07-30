@@ -96,9 +96,13 @@ test("管理员预览流式有据回答并在完成后核查服务端引用", as
   await expect(
     page.getByText("你们提供什么服务，工作日多久响应？", { exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByText(/我们提供知识整理、来源核查和有据回答配置服务/),
-  ).toBeVisible();
+  const factualRequest = page.getByRole("region", {
+    name: "事实诉求 1",
+  });
+  await expect(factualRequest).toContainText("已回答");
+  await expect(factualRequest).toContainText(
+    "知识整理、来源核查和有据回答配置服务",
+  );
   await expect(page.getByText("回答依据", { exact: true })).toBeVisible();
   const citation = page.getByRole("link", {
     name: new RegExp(sourceTitle),

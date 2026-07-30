@@ -2,18 +2,18 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { getKnowledgeEmbeddingProviderWithMetadata } from "@/lib/ai/embeddings";
+import { getKnowledgeEmbeddingProviderWithMetadata } from "../ai/embeddings.ts";
 import {
   getGroundedAnswerGenerationProvider,
   getGroundedAnswerRerankingProvider,
-} from "@/lib/ai/grounded-answer-providers";
-import { getEvidenceCoverageProvider } from "@/lib/ai/evidence-coverage-provider";
-import { readRetrievalConfig } from "@/lib/assistant/retrieval-config";
+} from "../ai/grounded-answer-providers.ts";
+import { getEvidenceCoverageProvider } from "../ai/evidence-coverage-provider.ts";
+import { readIntegerServerConfig } from "../server-config.ts";
 import type {
   AiCallLog,
   RetrievedContentUnit,
-} from "@/lib/assistant/grounded-answer";
-import { readIntegerServerConfig } from "@/lib/server-config";
+} from "./grounded-answer.ts";
+import { readRetrievalConfig } from "./retrieval-config.ts";
 
 type RetrievedContentUnitRow = {
   content_unit_id: string;
@@ -25,22 +25,33 @@ type RetrievedContentUnitRow = {
   similarity: number;
 };
 
+export type AiCallAuditContext = {
+  conversationId: string;
+  assistantMessageId: string;
+};
+
 export function createSupabaseGroundedAnswerDependencies(
   supabase: SupabaseClient,
+  auditContext?: AiCallAuditContext,
 ) {
   return createConfiguredDependencies(
     createCandidateRepository(supabase),
-    createSupabaseCallLogger(supabase),
+    createSupabaseCallLogger(supabase, auditContext),
   );
 }
 
 export function createPublicSupabaseGroundedAnswerDependencies(
   supabase: SupabaseClient,
   assistantPublicId: string,
+  auditContext?: AiCallAuditContext,
 ) {
   return createConfiguredDependencies(
     createPublicCandidateRepository(supabase, assistantPublicId),
-    createPublicSupabaseCallLogger(supabase, assistantPublicId),
+    createPublicSupabaseCallLogger(
+      supabase,
+      assistantPublicId,
+      auditContext,
+    ),
   );
 }
 
@@ -162,11 +173,20 @@ function createPublicCandidateRepository(
   };
 }
 
-export function createSupabaseCallLogger(supabase: SupabaseClient) {
+export function createSupabaseCallLogger(
+  supabase: SupabaseClient,
+  auditContext?: AiCallAuditContext,
+) {
   return {
     async record(log: AiCallLog) {
       const { error } = await supabase.from("ai_call_logs").insert({
         organization_id: log.organizationId,
+        conversation_id: auditContext?.conversationId ?? null,
+        assistant_message_id:
+          auditContext?.assistantMessageId ?? null,
+        factual_request_id: auditContext
+          ? log.factualRequestId ?? null
+          : null,
         call_type: log.callType,
         provider: log.provider,
         model: log.model,
@@ -189,6 +209,7 @@ export function createSupabaseCallLogger(supabase: SupabaseClient) {
 export function createPublicSupabaseCallLogger(
   supabase: SupabaseClient,
   assistantPublicId: string,
+  auditContext?: AiCallAuditContext,
 ) {
   return {
     async record(log: AiCallLog) {
@@ -206,6 +227,12 @@ export function createPublicSupabaseCallLogger(
           logged_outcome: log.outcome,
           logged_error_type: log.errorType,
           logged_trace_id: log.traceId,
+          target_conversation_id:
+            auditContext?.conversationId ?? null,
+          target_assistant_message_id:
+            auditContext?.assistantMessageId ?? null,
+          target_factual_request_id:
+            log.factualRequestId ?? null,
         },
       );
 

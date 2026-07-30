@@ -109,9 +109,13 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
     .getByLabel("预览问题")
     .fill(`${sourceMarker} 你们提供什么服务，工作日多久响应？`);
   await page.getByRole("button", { name: "发送问题" }).click();
-  await expect(
-    page.getByText(/我们提供知识整理、来源核查和有据回答配置服务/),
-  ).toBeVisible();
+  const previewFactualRequest = page.getByRole("region", {
+    name: "事实诉求 1",
+  });
+  await expect(previewFactualRequest).toContainText("已回答");
+  await expect(previewFactualRequest).toContainText(
+    "工作日问题会在两个工作小时内确认",
+  );
   await expect(
     page.getByRole("link", { name: new RegExp(sourceTitle) }),
   ).toHaveAttribute("href", sourceUrl);
@@ -382,6 +386,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
       "request_analysis",
       "embedding",
       "rerank",
+      "evidence_coverage",
       "answer",
     ]);
   await page.getByRole("button", { name: "没帮助" }).click();
@@ -999,7 +1004,9 @@ test("管理员补充知识后已发布助手立即改进回答并解决问题",
 
   await page.goto("/admin/unresolved-questions");
   await expect(page.getByText(question, { exact: true }).last()).toBeVisible();
-  await expect(page.getByText("可靠拒答", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("知识无支持", { exact: true }).first(),
+  ).toBeVisible();
   await expect(
     page.getByText(
       "当前可用知识不足以支持这个问题的事实性回答。",
@@ -1067,20 +1074,24 @@ async function disableAllKnowledgeSources(page: Page) {
     exact: true,
   });
   while ((await disableSourceButtons.count()) > 0) {
-    const disabledSourceCount = await page
-      .getByRole("button", { name: "重新启用", exact: true })
-      .count();
-    await disableSourceButtons.first().click();
-    await expect
-      .poll(() =>
-        page
-          .getByRole("button", {
-            name: "重新启用",
-            exact: true,
-          })
-          .count(),
-      )
-      .toBe(disabledSourceCount + 1);
+    const activeSourceRow = disableSourceButtons
+      .first()
+      .locator("xpath=ancestor::tr");
+    const sourceTitle = await activeSourceRow
+      .locator("td")
+      .first()
+      .locator("p")
+      .first()
+      .innerText();
+    const sourceRow = page
+      .getByRole("row")
+      .filter({ has: page.getByText(sourceTitle, { exact: true }) });
+    await activeSourceRow
+      .getByRole("button", { name: "停用", exact: true })
+      .click();
+    await expect(
+      sourceRow.getByRole("button", { name: "重新启用", exact: true }),
+    ).toBeVisible();
   }
 }
 

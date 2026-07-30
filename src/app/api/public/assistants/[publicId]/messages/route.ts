@@ -94,6 +94,10 @@ export async function POST(
       return conversation;
     },
     streamSectionedAnswer(conversation) {
+      const auditContext = {
+        conversationId: conversation.conversationId,
+        assistantMessageId: conversation.assistantMessageId,
+      };
       const analysisInput = {
         organizationId: conversation.organizationId,
         question: conversation.question,
@@ -107,6 +111,7 @@ export async function POST(
         createPublicSupabaseRequestAnalysisDependencies(
           supabase,
           publicId,
+          auditContext,
         );
 
       return streamStructuredSectionedAssistantResponse(
@@ -117,6 +122,7 @@ export async function POST(
             createPublicSupabaseGroundedAnswerDependencies(
               supabase,
               publicId,
+              auditContext,
             ),
         },
       );

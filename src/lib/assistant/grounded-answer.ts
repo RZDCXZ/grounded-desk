@@ -96,6 +96,7 @@ export type AssistantResponseEvent =
 
 export type AiCallLog = {
   organizationId: string;
+  factualRequestId?: string;
   callType:
     | "request_analysis"
     | "evidence_coverage"
@@ -194,6 +195,12 @@ export async function* streamGroundedAnswer(
   dependencies: GroundedAnswerDependencies,
 ): AsyncGenerator<AssistantResponseEvent> {
   const context = input.context ?? [];
+  const factualRequest = input.factualRequest ?? {
+    id: crypto.randomUUID(),
+    originalText: input.question,
+    normalizedQuestion: input.question,
+    requestAnalysisVersion: "legacy-single-request",
+  };
   const retrievalQuestion = createRetrievalQuestion(
     input.question,
     context,
@@ -205,6 +212,7 @@ export async function* streamGroundedAnswer(
     dependencies.callLogger,
     () => dependencies.questionEmbeddingProvider.embed(retrievalQuestion),
     dependencies.rateLimitRetry,
+    factualRequest.id,
   );
 
   const candidates = await dependencies.candidateRepository.retrieve(
@@ -224,6 +232,7 @@ export async function* streamGroundedAnswer(
           candidates,
         ),
         dependencies.rateLimitRetry,
+        factualRequest.id,
       );
 
   const candidatesById = new Map(
@@ -247,12 +256,6 @@ export async function* streamGroundedAnswer(
         : [];
     });
 
-  const factualRequest = input.factualRequest ?? {
-    id: crypto.randomUUID(),
-    originalText: input.question,
-    normalizedQuestion: input.question,
-    requestAnalysisVersion: "legacy-single-request",
-  };
   const coverageDecision = await decideEvidenceCoverage(
     {
       organizationId: input.organizationId,
@@ -350,6 +353,7 @@ export async function* streamGroundedAnswer(
         dependencies.answerProvider,
         answerMetadata,
         dependencies.callLogger,
+        factualRequest.id,
       );
       answerCompleted = true;
       break;
@@ -360,6 +364,7 @@ export async function* streamGroundedAnswer(
         dependencies.answerProvider,
         error,
         dependencies.callLogger,
+        factualRequest.id,
       );
 
       if (
@@ -486,9 +491,11 @@ async function recordSuccessfulCall(
   identity: ProviderIdentity,
   metadata: ProviderCallMetadata,
   callLogger: GroundedAnswerDependencies["callLogger"],
+  factualRequestId?: string,
 ) {
   await callLogger.record({
     organizationId,
+    factualRequestId,
     callType,
     provider: identity.provider,
     model: identity.model,
@@ -509,6 +516,7 @@ async function runLoggedProviderCall<T>(
   callLogger: GroundedAnswerDependencies["callLogger"],
   operation: () => Promise<ProviderCallResult<T>>,
   rateLimitRetry?: GroundedAnswerDependencies["rateLimitRetry"],
+  factualRequestId?: string,
 ) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -519,6 +527,7 @@ async function runLoggedProviderCall<T>(
         identity,
         result,
         callLogger,
+        factualRequestId,
       );
       return result;
     } catch (error) {
@@ -528,6 +537,7 @@ async function runLoggedProviderCall<T>(
         identity,
         error,
         callLogger,
+        factualRequestId,
       );
 
       if (await waitForRateLimitRetry(error, attempt, rateLimitRetry)) {
@@ -567,6 +577,7 @@ async function recordFailedCall(
   identity: ProviderIdentity,
   error: unknown,
   callLogger: GroundedAnswerDependencies["callLogger"],
+  factualRequestId?: string,
 ) {
   const metadata =
     error instanceof ProviderCallError
@@ -580,6 +591,7 @@ async function recordFailedCall(
 
   await callLogger.record({
     organizationId,
+    factualRequestId,
     callType,
     provider: identity.provider,
     model: identity.model,
