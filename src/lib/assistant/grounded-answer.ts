@@ -321,8 +321,6 @@ export async function* streamGroundedAnswer(
   let answerCompleted = false;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    let emittedText = false;
-
     try {
       const answerResult = dependencies.answerProvider.streamAnswer({
         question: input.question,
@@ -336,17 +334,29 @@ export async function* streamGroundedAnswer(
         ),
       });
 
+      let answerText = "";
       for await (const delta of answerResult.textStream) {
-        if (delta) {
-          emittedText = true;
-          yield {
-            type: "text_delta",
-            delta,
-          };
-        }
+        answerText += delta;
       }
 
       const answerMetadata = await answerResult.metadata;
+      if (
+        !isVerifiedAnswerText(
+          answerText,
+          coverageDecision.evidence.map(({ exactExcerpt }) => exactExcerpt),
+        )
+      ) {
+        throw new ProviderCallError(
+          "回答正文包含最终证据集之外的内容",
+          {
+            errorType: "invalid_response",
+            traceId: answerMetadata.traceId,
+            durationMs: answerMetadata.durationMs,
+            tokens: answerMetadata.tokens,
+          },
+        );
+      }
+
       await recordSuccessfulCall(
         input.organizationId,
         "answer",
@@ -355,6 +365,10 @@ export async function* streamGroundedAnswer(
         dependencies.callLogger,
         factualRequest.id,
       );
+      yield {
+        type: "text_delta",
+        delta: answerText,
+      };
       answerCompleted = true;
       break;
     } catch (error) {
@@ -372,7 +386,7 @@ export async function* streamGroundedAnswer(
           error,
           attempt,
           dependencies.rateLimitRetry,
-          !emittedText,
+          true,
         )
       ) {
         continue;
@@ -395,6 +409,56 @@ export async function* streamGroundedAnswer(
     input.factualRequest,
     coverageDecision,
   );
+}
+
+function isVerifiedAnswerText(
+  answerText: string,
+  exactExcerpts: string[],
+) {
+  const normalizedAnswer = normalizeAnswerText(answerText);
+  const evidenceFragments = exactExcerpts
+    .map(normalizeVerifiedFragment)
+    .filter(Boolean);
+
+  if (normalizedAnswer.length === 0 || evidenceFragments.length === 0) {
+    return false;
+  }
+
+  const reachableOffsets = new Set([0]);
+  for (let offset = 0; offset <= normalizedAnswer.length; offset += 1) {
+    if (!reachableOffsets.has(offset)) {
+      continue;
+    }
+
+    for (const fragment of evidenceFragments) {
+      if (!normalizedAnswer.startsWith(fragment, offset)) {
+        continue;
+      }
+
+      let fragmentEnd = offset + fragment.length;
+      while (/[。！？.!?]/u.test(normalizedAnswer[fragmentEnd] ?? "")) {
+        fragmentEnd += 1;
+      }
+      if (fragmentEnd === normalizedAnswer.length) {
+        return true;
+      }
+      if (normalizedAnswer[fragmentEnd] === " ") {
+        reachableOffsets.add(fragmentEnd + 1);
+      }
+    }
+  }
+
+  return false;
+}
+
+function normalizeAnswerText(value: string) {
+  return value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+}
+
+function normalizeVerifiedFragment(value: string) {
+  return normalizeAnswerText(value)
+    .replace(/[。！？.!?]+$/u, "")
+    .trim();
 }
 
 export type AuditedAssistantResponseEvent = AssistantResponseEvent & {

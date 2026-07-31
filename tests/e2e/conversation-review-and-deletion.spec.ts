@@ -224,7 +224,7 @@ test("管理员复盘最近会话、保留引用快照并确认删除关联数�
     "响应策略 multi-request-response-v1",
   );
   await expect(decisionAudit).toContainText(
-    "发布策略 structured-evidence-v1.25a97ae9422f",
+    "发布策略 structured-evidence-v1.a13dc1d89b2b",
   );
   const releaseGate = decisionAudit.getByRole("region", {
     name: "响应决策发布验证",

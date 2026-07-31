@@ -11,16 +11,16 @@ import type {
 } from "./response-sections.ts";
 
 export const RESPONSE_DECISION_STRATEGY_VERSION =
-  "structured-evidence-v1.25a97ae9422f" as const;
+  "structured-evidence-v1.a13dc1d89b2b" as const;
 
 export const DECISION_EVALUATION_DATASET_VERSION =
   "decision-contract-v1" as const;
 
 export const APPROVED_RESPONSE_DECISION_CONTRACT_FINGERPRINT =
-  "25a97ae9422fac2562b4d20a5fe7367cbfce4afec1b1921b0d912e1bbc5b38c1" as const;
+  "a13dc1d89b2b8f094db5250a1cb9208930b1c1ef80ac4063886bfbf5bc8dd20a" as const;
 
 export const APPROVED_DECISION_EVALUATOR_FINGERPRINT =
-  "04b06b2bc049ee768f16794bc40d27e5f9c463bdfa145bbc5cb1872ed3700f8c" as const;
+  "47f92e402b6ad64a9b240d990589d36a63ab6367aad3cec0e472e62628f19d61" as const;
 
 export const responseDecisionRelease = {
   strategyVersion: RESPONSE_DECISION_STRATEGY_VERSION,

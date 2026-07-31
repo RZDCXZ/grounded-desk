@@ -82,14 +82,15 @@ test("召回数量不足时整组摘要暴露错误拒答", async () => {
   assert.equal(result.summary.passed, false);
 });
 
-test("重排保留数不足时整组摘要暴露预期引用缺失", async () => {
+test("重排保留数不足时阻断超出最终证据集的回答", async () => {
   const result = await runEvaluation({
     RERANK_EVIDENCE_LIMIT: "4",
   });
 
   assert.equal(result.exitCode, 1);
-  assert.ok(result.summary.failures.missingCitations > 0);
-  assert.ok(result.summary.failures.unsupportedFacts > 0);
+  assert.ok(result.summary.failures.technicalErrors > 0);
+  assert.equal(result.summary.failures.unsupportedFacts, 0);
+  assert.equal(result.summary.failures.missingCitations, 0);
   assert.equal(result.summary.passed, false);
 });
 

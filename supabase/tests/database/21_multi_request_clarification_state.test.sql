@@ -191,6 +191,58 @@ begin
 end;
 $$;
 
+create function pg_temp.complete_single_clarification(
+  target_conversation_id uuid,
+  target_round integer,
+  target_outcome text
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  request_id uuid := gen_random_uuid();
+begin
+  return public.complete_public_clarification_decision(
+    (select public_id from published_assistant),
+    target_conversation_id,
+    target_outcome,
+    jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+      'id', request_id,
+      'order', 1,
+      'status', case target_outcome
+        when 'human_handoff' then 'handoff'
+        else 'clarification'
+      end,
+      'content', case target_outcome
+        when 'human_handoff'
+          then '目前仍缺少：开票主体。请联系人工团队协助。'
+        else '请补充：请明确发票的开票主体。'
+      end,
+      'citations', '[]'::jsonb,
+      'contact', case target_outcome
+        when 'human_handoff' then jsonb_build_object(
+          'label', '联系人工',
+          'url', 'mailto:admin@groundeddesk.local'
+        )
+        else null
+      end
+    ))),
+    jsonb_build_object(
+      'factualRequest', jsonb_build_object(
+        'id', request_id,
+        'originalText', '发票',
+        'normalizedQuestion', '发票',
+        'missingInformation', jsonb_build_array('开票主体'),
+        'clarificationRound', target_round,
+        'requestAnalysisVersion', 'request-analysis-v1'
+      ),
+      'outcome', target_outcome,
+      'responseStrategyVersion', 'clarification-handoff-v1'
+    )
+  );
+end;
+$$;
+
 create temporary table first_exchange as
 select *
 from public.begin_public_conversation_with_clarification_state(
@@ -253,7 +305,7 @@ select throws_ok(
 
 select lives_ok(
   $$
-    select pg_temp.complete_partial_clarification(
+    select pg_temp.complete_single_clarification(
       (select conversation_id from second_exchange),
       2,
       'clarification_request'
@@ -300,7 +352,7 @@ select throws_ok(
 
 select lives_ok(
   $$
-    select pg_temp.complete_partial_clarification(
+    select pg_temp.complete_single_clarification(
       (select conversation_id from third_exchange),
       2,
       'human_handoff'

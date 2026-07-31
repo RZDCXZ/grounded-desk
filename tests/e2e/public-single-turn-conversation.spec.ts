@@ -358,7 +358,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
     "application/x-ndjson",
   );
   await expect(
-    page.getByText(/根据当前可用知识/),
+    page.getByText(/我们提供知识整理、来源核查和有据回答配置服务/),
   ).toBeVisible();
   await expect(page.getByText("回答依据", { exact: true })).toBeVisible();
   await expect(
@@ -667,7 +667,9 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
     .getByRole("button", { name: "发送问题" })
     .click();
   await expect(
-    embeddedConversation.getByText(/根据当前可用知识/),
+    embeddedConversation.getByText(
+      /我们提供知识整理、来源核查和有据回答配置服务/,
+    ),
   ).toBeVisible();
   await expect(
     embeddedConversation.getByRole("link", {
@@ -715,7 +717,9 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await expect(
     page.getByText("它包含实施支持吗？", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText(/根据当前可用知识/)).toHaveCount(2);
+  await expect(
+    page.getByText(/我们提供知识整理、来源核查和有据回答配置服务/),
+  ).toHaveCount(2);
   await expect(page.getByLabel("咨询问题")).toBeEnabled();
   expect(publicMessageRequests.slice(0, 2)).toEqual([
     {
@@ -1042,7 +1046,6 @@ test("管理员补充知识后已发布助手立即改进回答并解决问题",
   await visitorPage.getByLabel("咨询问题").fill(question);
   await visitorPage.getByRole("button", { name: "发送问题" }).click();
 
-  await expect(visitorPage.getByText(/根据当前可用知识/).last()).toBeVisible();
   await expect(visitorPage.getByText(/七天内申请退款/)).toBeVisible();
   await expect(
     visitorPage.getByRole("link", { name: new RegExp(sourceTitle) }),

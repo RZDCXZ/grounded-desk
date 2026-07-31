@@ -327,6 +327,9 @@ function classifyAnswerProviderError(error: unknown) {
   if (statusCode === 400 || statusCode === 422) {
     return "input_rejected";
   }
+  if (statusCode !== undefined) {
+    return "provider_http";
+  }
 
   if (
     InvalidResponseDataError.isInstance(error) ||
@@ -382,9 +385,9 @@ function deterministicAnswerStream(input: {
   const evidenceText = input.evidence
     .map(({ exactExcerpt }) => exactExcerpt)
     .join(" ");
-  const answer = evidenceText.includes("两个工作小时")
-    ? "根据当前可用知识，我们提供知识整理、来源核查和有据回答配置服务。工作日问题会在两个工作小时内确认。"
-    : `根据当前可用知识，${input.evidence[0]?.exactExcerpt ?? ""}`;
+  const answer = input.evidence
+    .map(({ exactExcerpt }) => exactExcerpt)
+    .join("\n");
   const splitAt = Math.max(1, Math.floor(answer.length / 2));
 
   return {

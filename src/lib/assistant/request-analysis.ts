@@ -122,6 +122,12 @@ export async function analyzeAssistantRequest(
     try {
       result = await dependencies.provider.analyze(input);
       candidate = validateRequestAnalysisCandidate(result.value);
+      if (
+        candidate &&
+        !hasValidOriginalTextSpans(input, candidate)
+      ) {
+        candidate = null;
+      }
       clarificationStates = candidate
         ? deriveClarificationStates(input, candidate)
         : null;
@@ -621,6 +627,45 @@ function validateRequestAnalysisCandidate(
     conversationalIntent: value.conversationalIntent,
     factualRequests,
   };
+}
+
+function hasValidOriginalTextSpans(
+  input: RequestAnalysisInput,
+  candidate: RequestAnalysisCandidate,
+) {
+  const originalTexts = candidate.factualRequests.map(({ originalText }) =>
+    normalizedText(originalText)
+  );
+  if (new Set(originalTexts).size !== originalTexts.length) {
+    return false;
+  }
+
+  const currentQuestion = normalizedText(input.question);
+  const clarificationOriginalTexts = new Set(
+    [
+      ...(input.clarificationStates ?? []),
+      ...(input.clarificationState ? [input.clarificationState] : []),
+    ].map(({ originalText }) => normalizedText(originalText)),
+  );
+  const contextualThread = findTrailingClarificationThread(
+    input.context ?? [],
+  );
+  if (contextualThread) {
+    clarificationOriginalTexts.add(
+      normalizedText(contextualThread.originalText),
+    );
+  }
+
+  return originalTexts.every((originalText) =>
+    (
+      currentQuestion.includes(originalText) &&
+      (
+        candidate.factualRequests.length === 1 ||
+        originalText !== currentQuestion
+      )
+    ) ||
+    clarificationOriginalTexts.has(originalText)
+  );
 }
 
 function createFailedAnalysisLog(

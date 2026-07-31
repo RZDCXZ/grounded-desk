@@ -229,7 +229,18 @@ begin
           factual_request ->> 'originalText'
         and previous_request.completeness = 'incomplete'
         and previous_request.clarification_round = 1
-        and previous_result.message_type = 'clarification_request'
+        and (
+          previous_request.response_status = 'clarification'
+          or (
+            previous_request.response_status is null
+            and previous_result.message_type =
+              'clarification_request'
+          )
+        )
+        and previous_result.message_type in (
+          'clarification_request',
+          'partially_grounded_answer'
+        )
         and previous_result.status = 'completed'
     )
   then
@@ -252,7 +263,18 @@ begin
           factual_request ->> 'originalText'
         and previous_request.completeness = 'incomplete'
         and previous_request.clarification_round = 2
-        and previous_result.message_type = 'clarification_request'
+        and (
+          previous_request.response_status = 'clarification'
+          or (
+            previous_request.response_status is null
+            and previous_result.message_type =
+              'clarification_request'
+          )
+        )
+        and previous_result.message_type in (
+          'clarification_request',
+          'partially_grounded_answer'
+        )
         and previous_result.status = 'completed'
     )
   then

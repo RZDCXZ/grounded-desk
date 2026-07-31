@@ -189,7 +189,7 @@ test("正式发布流在完成事件上附加同一策略版本且不改变公�
   assert.equal(completion.type, "message_complete");
   assert.equal(
     Reflect.get(completion, responseDecisionReleaseSymbol),
-    "structured-evidence-v1.25a97ae9422f",
+    "structured-evidence-v1.a13dc1d89b2b",
   );
   assert.deepEqual(Object.keys(completion).sort(), [
     "resultType",

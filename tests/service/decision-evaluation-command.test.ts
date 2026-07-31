@@ -3,6 +3,10 @@ import { spawn } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import {
+  requestsMatchForEvaluation,
+} from "../../evaluations/decision/evaluate.ts";
+
 const projectDirectory = fileURLToPath(new URL("../..", import.meta.url));
 
 test("独立命令运行版本化决策评测并证明结构化策略达到发布门槛", async () => {
@@ -12,11 +16,11 @@ test("独立命令运行版本化决策评测并证明结构化策略达到发�
   assert.equal(result.summary.dataset.version, "decision-contract-v1");
   assert.equal(
     result.summary.strategy.version,
-    "structured-evidence-v1.25a97ae9422f",
+    "structured-evidence-v1.a13dc1d89b2b",
   );
   assert.equal(
     result.summary.strategy.contractFingerprint.slice(0, 12),
-    "25a97ae9422f",
+    "a13dc1d89b2b",
   );
   assert.equal(result.summary.strategy.evaluationMode, "contract");
   assert.ok(result.summary.dataset.total >= 24);
@@ -129,6 +133,43 @@ test("子集诊断不能被误认为可发布的全量门禁", async () => {
     result.summary.gate.failedRequirements.includes(
       "complete_decision_dataset",
     ),
+  );
+});
+
+test("复合诉求评测拒绝重复吞入整条消息的 originalText", () => {
+  const expected = [
+    {
+      originalText: "你们提供什么服务",
+      normalizedQuestion: "北辰工作室提供什么服务？",
+      completeness: "complete" as const,
+      coverage: "supported" as const,
+      outcome: "supported" as const,
+      allowedContentUnitIds: [],
+    },
+    {
+      originalText: "在上海有办公室吗",
+      normalizedQuestion: "北辰工作室是否在上海设有办公室？",
+      completeness: "complete" as const,
+      coverage: "unsupported" as const,
+      outcome: "unsupported" as const,
+      allowedContentUnitIds: [],
+    },
+  ];
+  const duplicatedWholeQuestion = expected.map((request) => ({
+    ...request,
+    originalText: "你们提供什么服务，在上海有办公室吗？",
+    outcome: request.coverage,
+    citationSourceIds: [],
+    evidenceContentUnitIds: [],
+  }));
+
+  assert.equal(
+    requestsMatchForEvaluation(
+      expected,
+      duplicatedWholeQuestion,
+      "live",
+    ),
+    false,
   );
 });
 

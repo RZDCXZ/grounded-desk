@@ -271,18 +271,21 @@ begin
           is not distinct from
           (evidence_relationship -> 'sourceUrl')
         and position(
-          pg_catalog.regexp_replace(
-            evidence_relationship ->> 'exactExcerpt',
+          btrim(pg_catalog.regexp_replace(
+            normalize(
+              evidence_relationship ->> 'exactExcerpt',
+              NFKC
+            ),
             '\s+',
             ' ',
             'g'
-          )
-          in pg_catalog.regexp_replace(
-            content_unit.content,
+          ))
+          in btrim(pg_catalog.regexp_replace(
+            normalize(content_unit.content, NFKC),
             '\s+',
             ' ',
             'g'
-          )
+          ))
         ) > 0
     ) then
       raise exception

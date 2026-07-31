@@ -34,7 +34,7 @@ begin
     )
   then
     new.response_decision_strategy_version :=
-      'structured-evidence-v1.25a97ae9422f';
+      'structured-evidence-v1.a13dc1d89b2b';
   else
     new.response_decision_strategy_version :=
       old.response_decision_strategy_version;

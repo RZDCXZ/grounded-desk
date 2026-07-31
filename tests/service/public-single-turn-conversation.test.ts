@@ -259,7 +259,7 @@ test("公开消息接口让有充分证据的完整短问题形成有据回答",
   assert.deepEqual(result.events, [
     {
       type: "text_delta",
-      delta: "根据现有知识，这是有据回答。",
+      delta: "退款到账时间以业务知识说明为准。",
     },
     {
       type: "complete",
@@ -1559,7 +1559,7 @@ async function runPublicKnowledgeScenario(
                 providerCalls.push("answer");
                 return {
                   textStream: (async function* () {
-                    yield "根据现有知识，这是有据回答。";
+                    yield "退款到账时间以业务知识说明为准。";
                   })(),
                   metadata: Promise.resolve({
                     durationMs: 1,

@@ -21,7 +21,7 @@ type RefusalExpectation = {
   type: "refusal";
 };
 
-type RankedCandidate = RetrievedContentUnit & {
+type RankedCandidate = EvaluationContentUnit & {
   rerankScore: number;
 };
 
@@ -397,6 +397,12 @@ async function evaluateCase(
       : null;
   const events: AssistantResponseEvent[] = [];
   let finalEvidence: VerifiedAnswerEvidence[] = [];
+  const answerStatementsByContentUnitId = new Map(
+    evaluationCase.candidates.map((candidate) => [
+      candidate.id,
+      candidate.answerStatements[evaluationCase.language],
+    ]),
+  );
 
   try {
     for await (const event of streamGroundedAnswer(
@@ -458,7 +464,9 @@ async function evaluateCase(
                     evidence: supportingCandidates.map((candidate) => ({
                       contentUnitId: candidate.id,
                       relationship: "supports",
-                      exactExcerpt: candidate.content,
+                      exactExcerpt:
+                        answerStatementsByContentUnitId.get(candidate.id) ??
+                        candidate.content,
                       reason: "离线评测数据标记为支持。",
                     })),
                   }
@@ -476,7 +484,7 @@ async function evaluateCase(
             finalEvidence = evidence;
             const answer =
               answerExpectation
-                ? answerExpectation.answerStatements.join(" ")
+                ? answerExpectation.answerStatements.join("\n")
                 : evaluationCase.language === "en"
                   ? "Northstar Studio has confirmed that request."
                   : "北辰工作室已确认可以满足该问题中的要求。";
@@ -793,7 +801,7 @@ function contentUnit(
 }
 
 function rankedCandidate(
-  unit: RetrievedContentUnit,
+  unit: EvaluationContentUnit,
   rerankScore: number,
   similarity: number,
 ): RankedCandidate {

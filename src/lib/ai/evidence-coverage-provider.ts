@@ -176,6 +176,7 @@ function createEvidenceCoverageInstruction() {
     "允许候选与诉求使用不同措辞时的直接语义蕴含，不要求关键词完全一致；例如候选“套餐包含自定义主题配置”可支持“能否调整界面风格”，但仅主题相关仍不得视为支持。",
     "supported 必须提供至少一个 supports 关系；unsupported 的 evidence 必须为空。",
     "conflicting 只用于相同适用范围内无法同时成立的事实，必须提供至少两个不同内容单元的 conflicts 关系。",
+    '冲突边界示例：同一标准套餐的候选分别写明“标准套餐可在购买后 7 日内退款。”和“标准套餐购买后不支持退款。”时，两项无法同时成立，必须输出 {"status": "conflicting", "evidence": [{"contentUnitId": "unit-example-a", "relationship": "conflicts", "exactExcerpt": "标准套餐可在购买后 7 日内退款。", "reason": "同一套餐给出互不相容的退款规则。"}, {"contentUnitId": "unit-example-b", "relationship": "conflicts", "exactExcerpt": "标准套餐购买后不支持退款。", "reason": "同一套餐给出互不相容的退款规则。"}]}。',
     "适用时间、产品、地区或条件不同且可以同时成立的内容不得判定为 conflicting；只选择适用于当前诉求的支持证据，无法确定适用证据时返回 unsupported。",
     "exactExcerpt 必须逐字取自对应候选内容单元的连续原文，不得改写、概括或拼接。",
     "reason 仅简短说明判定依据，不得把它当作事实证据。",
@@ -239,6 +240,9 @@ function classifyCoverageError(error: unknown) {
   }
   if (statusCode === 400 || statusCode === 422) {
     return "input_rejected" as const;
+  }
+  if (statusCode !== undefined) {
+    return "provider_http" as const;
   }
   if (
     error instanceof DOMException &&

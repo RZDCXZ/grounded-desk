@@ -50,7 +50,7 @@ insert into public.knowledge_revisions (
   '00000000-0000-4000-8000-000000000101',
   '00000000-0000-4000-8000-000000000797',
   '退款与发票说明',
-  '审核通过后，退款会在两个工作日内到账。企业订单可以开具电子发票。',
+  '审核通过后，退款会在２个工作日内到账。企业订单可以开具电子发票。',
   'https://example.com/refund',
   'available',
   now()
@@ -92,7 +92,7 @@ insert into public.content_units (
   '00000000-0000-4000-8000-000000000797',
   '00000000-0000-4000-8000-000000000897',
   0,
-  '审核通过后，退款会在两个工作日内到账。企业订单可以开具电子发票。',
+  '审核通过后，退款会在２个工作日内到账。企业订单可以开具电子发票。',
   array_fill(0::real, array[1024])::extensions.vector
 ),
 (
@@ -173,7 +173,7 @@ select lives_ok(
                 '00000000-0000-4000-8000-000000000997',
               'title', '退款与发票说明',
               'url', 'https://example.com/refund',
-              'exactExcerpt', '退款会在两个工作日内到账'
+              'exactExcerpt', E'\t退款会在2个工作日内到账'
             ),
             jsonb_build_object(
               'knowledgeSourceId',
@@ -218,7 +218,7 @@ select lives_ok(
                   'sourceTitle', '退款与发票说明',
                   'sourceUrl', 'https://example.com/refund',
                   'relationship', 'supports',
-                  'exactExcerpt', '退款会在两个工作日内到账',
+                  'exactExcerpt', E'\t退款会在2个工作日内到账',
                   'reason', '原文直接说明退款时效。'
                 )
               )
@@ -268,7 +268,7 @@ select lives_ok(
                   'sourceTitle', '退款与发票说明',
                   'sourceUrl', 'https://example.com/refund',
                   'relationship', 'conflicts',
-                  'exactExcerpt', '退款会在两个工作日内到账',
+                  'exactExcerpt', E'\t退款会在2个工作日内到账',
                   'reason', '来源给出两个工作日。'
                 ),
                 jsonb_build_object(

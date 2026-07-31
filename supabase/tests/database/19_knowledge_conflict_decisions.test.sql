@@ -50,7 +50,7 @@ insert into public.knowledge_revisions (
   '00000000-0000-4000-8000-000000000101',
   '00000000-0000-4000-8000-000000000795',
   '退款时效说明',
-  '审核通过后，退款会在两个工作日内原路到账。',
+  '审核通过后，退款会在２个工作日内原路到账。',
   'https://example.com/refund-two-days',
   'available',
   now()
@@ -92,7 +92,7 @@ insert into public.content_units (
   '00000000-0000-4000-8000-000000000795',
   '00000000-0000-4000-8000-000000000895',
   0,
-  '审核通过后，退款会在两个工作日内原路到账。',
+  '审核通过后，退款会在２个工作日内原路到账。',
   array_fill(0::real, array[1024])::extensions.vector
 ),
 (
@@ -146,7 +146,7 @@ select lives_ok(
                 '00000000-0000-4000-8000-000000000995',
               'title', '退款时效说明',
               'url', 'https://example.com/refund-two-days',
-              'exactExcerpt', '退款会在两个工作日内原路到账'
+              'exactExcerpt', E'\t退款会在2个工作日内原路到账'
             ),
             jsonb_build_object(
               'knowledgeSourceId',
@@ -181,7 +181,7 @@ select lives_ok(
               'sourceTitle', '退款时效说明',
               'sourceUrl', 'https://example.com/refund-two-days',
               'relationship', 'conflicts',
-              'exactExcerpt', '退款会在两个工作日内原路到账',
+              'exactExcerpt', E'\t退款会在2个工作日内原路到账',
               'reason', '同一退款流程给出两个工作日。'
             ),
             jsonb_build_object(
@@ -301,7 +301,7 @@ select public.complete_public_conflict_decision(
             '00000000-0000-4000-8000-000000000995',
           'title', '退款时效说明',
           'url', 'https://example.com/refund-two-days',
-          'exactExcerpt', '退款会在两个工作日内原路到账'
+          'exactExcerpt', '退款会在2个工作日内原路到账'
         ),
         jsonb_build_object(
           'knowledgeSourceId',
@@ -336,7 +336,7 @@ select public.complete_public_conflict_decision(
           'sourceTitle', '退款时效说明',
           'sourceUrl', 'https://example.com/refund-two-days',
           'relationship', 'conflicts',
-          'exactExcerpt', '退款会在两个工作日内原路到账',
+          'exactExcerpt', '退款会在2个工作日内原路到账',
           'reason', '同一退款流程给出两个工作日。'
         ),
         jsonb_build_object(
@@ -395,7 +395,7 @@ select results_eq(
       (
         '退款时效说明',
         'https://example.com/refund-two-days',
-        '退款会在两个工作日内原路到账'
+        E'\t退款会在2个工作日内原路到账'
       ),
       (
         '退款时效更新',

@@ -522,7 +522,7 @@ function evaluateFailures(
 
   if (
     expected.resultType !== "technical_failure" &&
-    !sameRequests(
+    !requestsMatchForEvaluation(
       expected.factualRequests,
       actual.factualRequests,
       mode,
@@ -835,26 +835,35 @@ function readEvidenceForRequest(
   return [];
 }
 
-function sameRequests(
+export function requestsMatchForEvaluation(
   expected: DecisionEvaluationAnnotation["factualRequests"],
   actual: ActualFactualRequest[],
   mode: "contract" | "live",
 ) {
+  const expectedOriginals = expected.map(({ originalText }) =>
+    normalizeRequestText(originalText)
+  );
+  const actualOriginals = actual.map(({ originalText }) =>
+    normalizeRequestText(originalText)
+  );
+
   return expected.length === actual.length &&
+    new Set(actualOriginals).size === actualOriginals.length &&
     expected.every((request, index) => {
       const actualRequest = actual[index];
       if (!actualRequest) {
         return false;
       }
-      const expectedOriginal = normalizeRequestText(
-        request.originalText,
-      );
-      const actualOriginal = normalizeRequestText(
-        actualRequest.originalText,
-      );
+      const expectedOriginal = expectedOriginals[index] ?? "";
+      const actualOriginal = actualOriginals[index] ?? "";
       const sameIntentSpan =
         expectedOriginal.includes(actualOriginal) ||
         actualOriginal.includes(expectedOriginal);
+      const overlappingExpectedSpans = expectedOriginals.filter(
+        (candidateOriginal) =>
+          candidateOriginal.includes(actualOriginal) ||
+          actualOriginal.includes(candidateOriginal),
+      ).length;
       const expectedNormalized = normalizeRequestText(
         request.normalizedQuestion,
       );
@@ -869,6 +878,7 @@ function sameRequests(
         : actualRequest.normalizedQuestionSimilarity >= 0.5;
 
       return sameIntentSpan &&
+        overlappingExpectedSpans === 1 &&
         actualRequest.completeness === request.completeness &&
         sameNormalizedQuestion;
     });

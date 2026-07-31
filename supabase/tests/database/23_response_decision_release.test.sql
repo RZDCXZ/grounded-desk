@@ -124,7 +124,7 @@ select results_eq(
     from public.messages
     where id = '00000000-0000-4000-8000-000000002322'
   $$,
-  array['structured-evidence-v1.25a97ae9422f'::text],
+  array['structured-evidence-v1.a13dc1d89b2b'::text],
   'the approved release version is assigned on finalization'
 );
 
@@ -138,7 +138,7 @@ select results_eq(
     from public.messages
     where id = '00000000-0000-4000-8000-000000002322'
   $$,
-  array['structured-evidence-v1.25a97ae9422f'::text],
+  array['structured-evidence-v1.a13dc1d89b2b'::text],
   'completed release versions cannot be rewritten'
 );
 

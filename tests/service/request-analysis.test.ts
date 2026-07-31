@@ -139,6 +139,80 @@ test("请求分析器严格返回版本化且有顺序的最多三项事实诉�
   ]);
 });
 
+test("复合诉求拒绝重复整句 originalText 并重试为独立原文片段", async () => {
+  const wholeQuestion = input.question;
+  const outputs: unknown[] = [
+    candidate({
+      language: "zh",
+      interactionType: "mixed",
+      conversationalIntent: "greeting",
+      factualRequests: [
+        {
+          originalText: wholeQuestion,
+          normalizedQuestion: "退款多久到账？",
+          completeness: "complete",
+          missingInformation: [],
+        },
+        {
+          originalText: wholeQuestion,
+          normalizedQuestion: "可以开发票吗？",
+          completeness: "complete",
+          missingInformation: [],
+        },
+      ],
+    }),
+    candidate({
+      language: "zh",
+      interactionType: "mixed",
+      conversationalIntent: "greeting",
+      factualRequests: [
+        {
+          originalText: "退款多久到账",
+          normalizedQuestion: "退款多久到账？",
+          completeness: "complete",
+          missingInformation: [],
+        },
+        {
+          originalText: "可以开发票吗",
+          normalizedQuestion: "可以开发票吗？",
+          completeness: "complete",
+          missingInformation: [],
+        },
+      ],
+    }),
+  ];
+  const logs: AiCallLog[] = [];
+  let calls = 0;
+
+  const result = await analyzeAssistantRequest(input, {
+    provider: {
+      provider: "test",
+      model: "request-analysis",
+      async analyze() {
+        return providerResult(outputs[calls++], `trace-${calls}`);
+      },
+    },
+    callLogger: {
+      async record(log) {
+        logs.push(log);
+      },
+    },
+  });
+
+  assert.equal(calls, 2);
+  assert.deepEqual(
+    result.factualRequests.map(({ originalText }) => originalText),
+    ["退款多久到账", "可以开发票吗"],
+  );
+  assert.deepEqual(
+    logs.map(({ outcome, errorType }) => ({ outcome, errorType })),
+    [
+      { outcome: "error", errorType: "invalid_response" },
+      { outcome: "success", errorType: null },
+    ],
+  );
+});
+
 test("未知字段和超过三项的无效结构各记录一次失败并在第二次后抛出技术故障", async () => {
   const logs: AiCallLog[] = [];
   const outputs: unknown[] = [
@@ -260,7 +334,10 @@ test("成功调用的日志写入失败不会触发额外模型调用", async ()
   let providerCalls = 0;
 
   await assert.rejects(
-    analyzeAssistantRequest(input, {
+    analyzeAssistantRequest({
+      ...input,
+      question: "你们提供什么服务？",
+    }, {
       provider: {
         provider: "test",
         model: "request-analysis",

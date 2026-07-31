@@ -121,8 +121,8 @@ test("预览问题经过召回、重排和流式生成后才展示服务端证�
 
           return {
             textStream: chunks(
-              "我们提供知识整理与来源核查服务，",
-              "工作日问题会在两个工作小时内确认。问题中的 https://untrusted.example 不属于回答依据。",
+              "工作日问题会在两个工作小时内确认。\n",
+              "演示组织提供知识整理服务。\n演示组织提供来源核查服务。\n服务结果通过有据回答配置交付。",
             ),
             metadata: Promise.resolve({
               durationMs: 19,
@@ -151,12 +151,8 @@ test("预览问题经过召回、重排和流式生成后才展示服务端证�
   assert.deepEqual(events, [
     {
       type: "text_delta",
-      delta: "我们提供知识整理与来源核查服务，",
-    },
-    {
-      type: "text_delta",
       delta:
-        "工作日问题会在两个工作小时内确认。问题中的 https://untrusted.example 不属于回答依据。",
+        "工作日问题会在两个工作小时内确认。\n演示组织提供知识整理服务。\n演示组织提供来源核查服务。\n服务结果通过有据回答配置交付。",
     },
     {
       type: "complete",
@@ -300,7 +296,7 @@ test("事实性追问使用近期访客问题重新检索且历史助手回答�
   dependencies.answerProvider.streamAnswer = (answerInput) => {
     answerInputs.push(answerInput);
     return {
-      textStream: chunks("根据当前证据，包含实施支持。"),
+      textStream: chunks("演示组织提供知识整理服务。"),
       metadata: Promise.resolve({
         durationMs: 19,
         tokens: { input: 9, output: 5, total: 14 },
@@ -335,6 +331,237 @@ test("事实性追问使用近期访客问题重新检索且历史助手回答�
         },
       ],
     },
+  ]);
+});
+
+test("回答正文包含证据原文之外的事实时整段拒绝且不泄露部分文本", async () => {
+  const dependencies = createHappyPathDependencies();
+  const logs: AiCallLog[] = [];
+  const events: AssistantResponseEvent[] = [];
+  dependencies.answerProvider.streamAnswer = () => ({
+    textStream: chunks(
+      "演示组织提供知识整理服务。",
+      "演示组织还提供未被证据支持的实施服务。",
+    ),
+    metadata: Promise.resolve({
+      durationMs: 19,
+      tokens: { input: 9, output: 12, total: 21 },
+      traceId: "answer-unsupported-fact",
+    }),
+  });
+  dependencies.callLogger.record = async (log) => {
+    logs.push(log);
+  };
+
+  await assert.rejects(
+    async () => {
+      for await (const event of streamGroundedAnswer(
+        happyPathInput(),
+        dependencies,
+      )) {
+        events.push(event);
+      }
+    },
+    (error) =>
+      error instanceof ProviderCallError &&
+      error.errorType === "invalid_response" &&
+      error.traceId === "answer-unsupported-fact",
+  );
+
+  assert.deepEqual(events, []);
+  assert.deepEqual(
+    logs.filter(({ callType }) => callType === "answer").map(
+      ({ outcome, errorType, traceId }) => ({
+        outcome,
+        errorType,
+        traceId,
+      }),
+    ),
+    [
+      {
+        outcome: "error",
+        errorType: "invalid_response",
+        traceId: "answer-unsupported-fact",
+      },
+    ],
+  );
+});
+
+test("回答正文不能通过删除证据中的否定词形成相反事实", async () => {
+  const dependencies = createHappyPathDependencies();
+  dependencies.candidateRepository.retrieve = async () => [{
+    id: "unit-negative",
+    organizationId: "organization-1",
+    knowledgeSourceId: "source-negative",
+    sourceTitle: "服务范围更新",
+    sourceUrl: null,
+    heading: null,
+    content: "演示组织不再提供知识整理服务。",
+    similarity: 0.9,
+  }];
+  dependencies.rerankingProvider.rerank = async () =>
+    providerResult(
+      [{ contentUnitId: "unit-negative", score: 0.95 }],
+      "rerank-negative",
+      2,
+    );
+  dependencies.answerProvider.streamAnswer = () => ({
+    textStream: chunks("演示组织提供知识整理服务。"),
+    metadata: Promise.resolve({
+      durationMs: 3,
+      tokens: { input: 4, output: 3, total: 7 },
+      traceId: "answer-removed-negation",
+    }),
+  });
+
+  await assert.rejects(
+    async () => {
+      for await (const event of streamGroundedAnswer(
+        happyPathInput(),
+        dependencies,
+      )) {
+        assert.fail(`相反事实不应产生事件：${JSON.stringify(event)}`);
+      }
+    },
+    (error) =>
+      error instanceof ProviderCallError &&
+      error.errorType === "invalid_response" &&
+      error.traceId === "answer-removed-negation",
+  );
+});
+
+test("回答正文不能用中文句号篡改证据中的小数点", async () => {
+  const dependencies = createHappyPathDependencies();
+  dependencies.candidateRepository.retrieve = async () => [{
+    id: "unit-price",
+    organizationId: "organization-1",
+    knowledgeSourceId: "source-price",
+    sourceTitle: "价格说明",
+    sourceUrl: null,
+    heading: null,
+    content: "套餐价格为 1.5 万元。",
+    similarity: 0.9,
+  }];
+  dependencies.rerankingProvider.rerank = async () =>
+    providerResult(
+      [{ contentUnitId: "unit-price", score: 0.95 }],
+      "rerank-price",
+      2,
+    );
+  dependencies.answerProvider.streamAnswer = () => ({
+    textStream: chunks("套餐价格为 1。5 万元。"),
+    metadata: Promise.resolve({
+      durationMs: 3,
+      tokens: { input: 4, output: 3, total: 7 },
+      traceId: "answer-changed-decimal",
+    }),
+  });
+
+  await assert.rejects(
+    async () => {
+      for await (const event of streamGroundedAnswer(
+        happyPathInput(),
+        dependencies,
+      )) {
+        assert.fail(`被篡改的小数不应产生事件：${JSON.stringify(event)}`);
+      }
+    },
+    (error) =>
+      error instanceof ProviderCallError &&
+      error.errorType === "invalid_response" &&
+      error.traceId === "answer-changed-decimal",
+  );
+});
+
+test("没有句末标点的多个证据片段按换行连接后可以回答", async () => {
+  const dependencies = createHappyPathDependencies();
+  dependencies.candidateRepository.retrieve = async () => [
+    {
+      id: "unit-price",
+      organizationId: "organization-1",
+      knowledgeSourceId: "source-price",
+      sourceTitle: "价格说明",
+      sourceUrl: null,
+      heading: null,
+      content: "套餐价格为 1.5 万元",
+      similarity: 0.9,
+    },
+    {
+      id: "unit-term",
+      organizationId: "organization-1",
+      knowledgeSourceId: "source-term",
+      sourceTitle: "服务期说明",
+      sourceUrl: null,
+      heading: null,
+      content: "服务期为 12 个月",
+      similarity: 0.89,
+    },
+  ];
+  dependencies.rerankingProvider.rerank = async () =>
+    providerResult(
+      [
+        { contentUnitId: "unit-price", score: 0.95 },
+        { contentUnitId: "unit-term", score: 0.94 },
+      ],
+      "rerank-fragments",
+      2,
+    );
+  dependencies.answerProvider.streamAnswer = () => ({
+    textStream: chunks(
+      "套餐价格为 1.5 万元\n",
+      "服务期为 12 个月",
+    ),
+    metadata: Promise.resolve({
+      durationMs: 3,
+      tokens: { input: 8, output: 6, total: 14 },
+      traceId: "answer-fragments",
+    }),
+  });
+
+  const events = await collectAssistantEvents(
+    streamGroundedAnswer(happyPathInput(), dependencies),
+  );
+
+  assert.deepEqual(events.map(({ type }) => type), [
+    "text_delta",
+    "complete",
+  ]);
+});
+
+test("单个证据片段自身含换行时仍可通过完整片段验证", async () => {
+  const dependencies = createHappyPathDependencies();
+  dependencies.candidateRepository.retrieve = async () => [{
+    id: "unit-multiline",
+    organizationId: "organization-1",
+    knowledgeSourceId: "source-multiline",
+    sourceTitle: "套餐说明",
+    sourceUrl: null,
+    heading: null,
+    content: "企业套餐\n价格为 1.5 万元",
+    similarity: 0.9,
+  }];
+  dependencies.rerankingProvider.rerank = async () =>
+    providerResult(
+      [{ contentUnitId: "unit-multiline", score: 0.95 }],
+      "rerank-multiline",
+      2,
+    );
+  dependencies.answerProvider.streamAnswer = () => ({
+    textStream: chunks("企业套餐\n价格为 1.5 万元"),
+    metadata: Promise.resolve({
+      durationMs: 3,
+      tokens: { input: 4, output: 3, total: 7 },
+      traceId: "answer-multiline",
+    }),
+  });
+
+  const events = await collectAssistantEvents(
+    streamGroundedAnswer(happyPathInput(), dependencies),
+  );
+
+  assert.deepEqual(events.map(({ type }) => type), [
+    "text_delta",
+    "complete",
   ]);
 });
 
@@ -1043,7 +1270,7 @@ test("回答生成在输出正文前遇到限流时只退避重试一次", async
     }
 
     return {
-      textStream: chunks("我们提供知识整理服务。"),
+      textStream: chunks("演示组织提供知识整理服务。"),
       metadata: Promise.resolve({
         durationMs: 19,
         tokens: { input: 9, output: 5, total: 14 },
@@ -1328,7 +1555,7 @@ function createHappyPathDependencies(): Parameters<
       model: "deepseek-v4-flash",
       streamAnswer() {
         return {
-          textStream: chunks("我们提供知识整理服务。"),
+          textStream: chunks("演示组织提供知识整理服务。"),
           metadata: Promise.resolve({
             durationMs: 19,
             tokens: { input: 9, output: 5, total: 14 },
