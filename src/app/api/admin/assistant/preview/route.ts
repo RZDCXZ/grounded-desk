@@ -1,7 +1,7 @@
 import { createAssistantPreviewResponse } from "@/lib/assistant/preview-response";
 import {
-  streamStructuredSectionedAssistantResponse,
-} from "@/lib/assistant/request-analysis";
+  streamReleasedSectionedAssistantResponse,
+} from "@/lib/assistant/response-decision-release";
 import type {
   ConversationContextMessage,
 } from "@/lib/assistant/grounded-answer";
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     createSupabaseRequestAnalysisDependencies(supabase);
 
   return createAssistantPreviewResponse(
-    streamStructuredSectionedAssistantResponse(
+    streamReleasedSectionedAssistantResponse(
       analysisInput,
       {
         requestAnalysis: analysisDependencies,

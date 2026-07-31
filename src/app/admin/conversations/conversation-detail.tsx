@@ -17,6 +17,9 @@ import { notFound } from "next/navigation";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { ControlledMarkdown } from "@/components/assistant/controlled-markdown";
 import { Button } from "@/components/ui/button";
+import {
+  responseDecisionRelease,
+} from "@/lib/assistant/response-decision-release";
 import { requireAdministrator } from "@/lib/auth/require-admin";
 import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -36,6 +39,7 @@ type Message = {
   message_type: MessageType;
   content: string;
   status: "pending" | "completed" | "failed";
+  response_decision_strategy_version: string | null;
   created_at: string;
 };
 type Citation = {
@@ -147,7 +151,9 @@ export async function ConversationDetail({
     await Promise.all([
       supabase
         .from("messages")
-        .select("id, message_type, content, status, created_at")
+        .select(
+          "id, message_type, content, status, response_decision_strategy_version, created_at",
+        )
         .eq("organization_id", organization.id)
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: true }),
@@ -562,6 +568,14 @@ function AssistantMessage({
           />
         ) : null}
 
+        {factualRequests.length === 0 &&
+        message.response_decision_strategy_version ===
+          responseDecisionRelease.strategyVersion ? (
+          <div className="mt-4">
+            <ResponseDecisionReleaseAudit />
+          </div>
+        ) : null}
+
         {canHaveReviewMetadata && feedback ? (
           <div
             className={cn(
@@ -777,6 +791,9 @@ function DecisionAudit({
   const regionLabel = factualRequests.length === 1
     ? `事实诉求 ${factualRequests[0]?.request_order ?? 1} 决策审计`
     : "结构化决策审计";
+  const usesApprovedRelease =
+    message.response_decision_strategy_version ===
+      responseDecisionRelease.strategyVersion;
 
   return (
     <details className="mt-4 rounded-lg border border-line bg-paper">
@@ -858,6 +875,11 @@ function DecisionAudit({
                     "历史消息未保存"}
                 </p>
                 <p>响应策略 {request.response_strategy_version}</p>
+                <p>
+                  发布策略{" "}
+                  {message.response_decision_strategy_version ??
+                    "历史消息未保存"}
+                </p>
               </div>
               {requestQuestions.length > 0 ? (
                 <div className="mt-3 space-y-2 border-t border-line pt-3">
@@ -872,6 +894,7 @@ function DecisionAudit({
             </section>
           );
         })}
+        {usesApprovedRelease ? <ResponseDecisionReleaseAudit /> : null}
         {linkedQuestions.some(
           ({ factual_request_id }) => factual_request_id === null,
         ) ? (
@@ -902,6 +925,46 @@ function DecisionAudit({
         ) : null}
       </div>
     </details>
+  );
+}
+
+function ResponseDecisionReleaseAudit() {
+  const { comparison, safety } = responseDecisionRelease;
+
+  return (
+    <section
+      aria-label="响应决策发布验证"
+      className="rounded-lg border border-success/25 bg-success-light p-3 text-[11px] leading-5 text-ink-600"
+      role="region"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-semibold text-success">发布门槛：已通过</p>
+        <p className="mono text-[9px] text-ink-400">
+          验证日期 {responseDecisionRelease.evaluatedAt}
+        </p>
+      </div>
+      <p className="mono mt-2 text-[9px] text-ink-400">
+        发布策略 {responseDecisionRelease.strategyVersion}
+      </p>
+      <p className="mono text-[9px] text-ink-400">
+        评测集 {responseDecisionRelease.datasetVersion} · 契约指纹{" "}
+        {responseDecisionRelease.contractFingerprint.slice(0, 12)}
+      </p>
+      <p className="mono text-[9px] text-ink-400">
+        评测器指纹{" "}
+        {responseDecisionRelease.evaluatorFingerprint.slice(0, 12)}
+      </p>
+      <p className="mt-2">
+        安全契约：来源外事实 {safety.unsupportedFacts} · 不可验证证据{" "}
+        {safety.unverifiableEvidence} · 错误引用 {safety.wrongCitations} ·
+        技术故障伪装拒答 {safety.technicalFailuresAsRefusals}
+      </p>
+      <p>
+        基线对比：错误回答 {comparison.legacyWrongAnswers}→
+        {comparison.newWrongAnswers} · 错误拒答{" "}
+        {comparison.legacyWrongRefusals}→{comparison.newWrongRefusals}
+      </p>
+    </section>
   );
 }
 

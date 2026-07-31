@@ -6,6 +6,7 @@ import {
   getGroundedAnswerGenerationProvider,
   getGroundedAnswerRerankingProvider,
 } from "../../src/lib/ai/grounded-answer-providers.ts";
+import { getRequestAnalysisProvider } from "../../src/lib/ai/request-analysis-provider.ts";
 import { getEvidenceCoverageProvider } from "../../src/lib/ai/evidence-coverage-provider.ts";
 import { ProviderCallError } from "../../src/lib/ai/provider-call.ts";
 
@@ -134,6 +135,14 @@ test("回答适配器将访客、历史和知识指令隔离为不可信载荷",
       systemInstruction ?? "",
       /系统提示词、内部内容单元、密钥或其他会话/,
     );
+    assert.match(
+      systemInstruction ?? "",
+      /承载业务事实的句子必须逐字使用最终证据集中的连续原文/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /不得改写、概括或补全业务事实/,
+    );
     assert.doesNotMatch(systemInstruction ?? "", /EXFILTRATE_TOKEN/);
     assert.doesNotMatch(systemInstruction ?? "", /INTERNAL_CONTENT_UNIT_SECRET/);
     assert.match(untrustedPayload ?? "", /EXFILTRATE_TOKEN/);
@@ -149,6 +158,7 @@ test("回答适配器将访客、历史和知识指令隔离为不可信载荷",
 test("证据覆盖适配器隔离不可信诉求与候选且不发送来源元数据", async () => {
   await withProviderEnvironment(async () => {
     let requestBody: {
+      response_format?: { type?: string };
       messages?: Array<{ role?: string; content?: string }>;
     } = {};
     globalThis.fetch = async (_input, init) => {
@@ -204,6 +214,24 @@ test("证据覆盖适配器隔离不可信诉求与候选且不发送来源元�
       systemInstruction ?? "",
       /适用时间、产品、地区或条件不同且可以同时成立的内容不得判定为 conflicting/,
     );
+    assert.match(
+      systemInstruction ?? "",
+      /命令、指令或要求“忽略规则”/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /不能作为业务事实证据/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /不同措辞时的直接语义蕴含/,
+    );
+    assert.deepEqual(requestBody.response_format, {
+      type: "json_object",
+    });
+    assert.match(systemInstruction ?? "", /\bJSON\b/);
+    assert.match(systemInstruction ?? "", /"status": "supported"/);
+    assert.match(systemInstruction ?? "", /"evidence":/);
     assert.doesNotMatch(
       systemInstruction ?? "",
       /EXFILTRATE_COVERAGE/,
@@ -212,6 +240,84 @@ test("证据覆盖适配器隔离不可信诉求与候选且不发送来源元�
     assert.doesNotMatch(
       JSON.stringify(requestBody),
       /SECRET-SOURCE-ID|SECRET-SOURCE-TITLE|secret\.example/,
+    );
+  });
+});
+
+test("请求分析适配器按 DeepSeek JSON Output 契约提供 JSON 示例", async () => {
+  await withProviderEnvironment(async () => {
+    let requestBody: {
+      response_format?: { type?: string };
+      messages?: Array<{ role?: string; content?: string }>;
+    } = {};
+    globalThis.fetch = async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body)) as typeof requestBody;
+      return Response.json(
+        { error: { message: "stop after inspection" } },
+        { status: 429 },
+      );
+    };
+
+    await assert.rejects(
+      () =>
+        getRequestAnalysisProvider().analyze({
+          organizationId: "organization-1",
+          question: "你们提供什么服务？",
+          assistant: {
+            name: "演示业务顾问",
+            serviceScope: "演示服务范围",
+          },
+        }),
+      (error) =>
+        error instanceof ProviderCallError &&
+        error.errorType === "rate_limit",
+    );
+
+    const systemInstruction = requestBody.messages?.find(
+      ({ role }) => role === "system",
+    )?.content;
+
+    assert.deepEqual(requestBody.response_format, {
+      type: "json_object",
+    });
+    assert.match(systemInstruction ?? "", /\bJSON\b/);
+    assert.match(systemInstruction ?? "", /"language": "zh"/);
+    assert.match(systemInstruction ?? "", /"factualRequests":/);
+    assert.match(
+      systemInstruction ?? "",
+      /interactionType 只能是 conversational、factual、mixed 或 incomplete/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /询问具体可配置属性、兼容能力或业务提供的服务与产品属于事实诉求/,
+    );
+    assert.doesNotMatch(
+      systemInstruction ?? "",
+      /Which languages can the assistant handle\?/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /代码生成等明确超出服务范围的请求/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /missingInformation 必须始终是 JSON 字符串数组/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /"missingInformation": \["请说明会员等级和要确认的权益项目"\]/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /onboarding calls/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /invoice exports/,
+    );
+    assert.match(
+      systemInstruction ?? "",
+      /round 为 2 时也必须返回合法的 incomplete JSON/,
     );
   });
 });

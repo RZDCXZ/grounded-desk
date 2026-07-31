@@ -4,8 +4,8 @@ import {
   type PublicConversationStart,
 } from "@/lib/assistant/public-conversation";
 import {
-  streamStructuredSectionedAssistantResponse,
-} from "@/lib/assistant/request-analysis";
+  streamReleasedSectionedAssistantResponse,
+} from "@/lib/assistant/response-decision-release";
 import { selectCompletionProcedure } from "@/lib/assistant/conversation-persistence";
 import { createPublicSupabaseGroundedAnswerDependencies } from "@/lib/assistant/supabase-grounded-answer";
 import { createPublicSupabaseRequestAnalysisDependencies } from "@/lib/assistant/supabase-request-analysis";
@@ -114,7 +114,7 @@ export async function POST(
           auditContext,
         );
 
-      return streamStructuredSectionedAssistantResponse(
+      return streamReleasedSectionedAssistantResponse(
         analysisInput,
         {
           requestAnalysis: analysisDependencies,

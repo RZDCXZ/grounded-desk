@@ -182,6 +182,9 @@ test("管理员复盘最近会话、保留引用快照并确认删除关联数�
   await expect(page.getByRole("region", {
     name: "处理阶段审计",
   })).toContainText("消息映射：必要处理阶段失败，保留为技术故障");
+  await expect(page.getByRole("region", {
+    name: "响应决策发布验证",
+  })).toContainText("发布门槛：已通过");
 
   await conversationList
     .getByRole("link", { name: /最初的问题/ })
@@ -217,7 +220,24 @@ test("管理员复盘最近会话、保留引用快照并确认删除关联数�
   await expect(decisionAudit).toContainText("审计说明：该片段直接回答事实诉求。");
   await expect(decisionAudit).toContainText("请求分析器 request-analysis-v1");
   await expect(decisionAudit).toContainText("覆盖判定器 evidence-coverage-v1");
-  await expect(decisionAudit).toContainText("响应策略 response-strategy-v1");
+  await expect(decisionAudit).toContainText(
+    "响应策略 multi-request-response-v1",
+  );
+  await expect(decisionAudit).toContainText(
+    "发布策略 structured-evidence-v1.25a97ae9422f",
+  );
+  const releaseGate = decisionAudit.getByRole("region", {
+    name: "响应决策发布验证",
+  });
+  await expect(releaseGate).toContainText("发布门槛：已通过");
+  await expect(releaseGate).toContainText("评测集 decision-contract-v1");
+  await expect(releaseGate).toContainText("验证日期 2026-07-31");
+  await expect(releaseGate).toContainText(
+    "来源外事实 0 · 不可验证证据 0 · 错误引用 0 · 技术故障伪装拒答 0",
+  );
+  await expect(releaseGate).toContainText(
+    "错误回答 6→0 · 错误拒答 4→0",
+  );
   await expect(decisionAudit).toContainText(
     "消息映射：至少一项事实诉求获得支持，且另有未支持或未完成诉求",
   );
@@ -239,13 +259,13 @@ test("管理员复盘最近会话、保留引用快照并确认删除关联数�
     decisionAudit.getByRole("link", { name: /无支持/ }),
   ).toHaveAttribute(
     "href",
-    `/admin/unresolved-questions?status=pending&question=00000000-0000-4000-8000-000000000803`,
+    /\/admin\/unresolved-questions\?status=pending&question=[0-9a-f-]+/u,
   );
   await expect(
     decisionAudit.getByRole("link", { name: /知识冲突/ }),
   ).toHaveAttribute(
     "href",
-    `/admin/unresolved-questions?status=pending&question=00000000-0000-4000-8000-000000000804`,
+    /\/admin\/unresolved-questions\?status=pending&question=[0-9a-f-]+/u,
   );
   await expect(
     decisionAudit.getByRole("link", { name: /没帮助/ }),
@@ -435,18 +455,20 @@ async function seedConversationReviewScenario(
       {
         id: sourceId,
         organization_id: organizationId,
-        title: "稍后删除的知识来源",
+        title: "生成时保存的标题",
         source_type: "manual",
         status: "available",
         enabled: true,
+        original_url: "https://example.com/snapshot",
       },
       ...conflictingSourceIds.map((id, index) => ({
         id,
         organization_id: organizationId,
-        title: `冲突知识来源 ${index + 1}`,
+        title: `冲突知识快照 ${index === 0 ? "A" : "B"}`,
         source_type: "manual",
         status: "available",
         enabled: true,
+        original_url: `https://example.com/conflict-${index + 1}`,
       })),
     ]);
   expect(sourceError).toBeNull();
@@ -599,13 +621,9 @@ async function seedConversationReviewScenario(
         id: "00000000-0000-4000-8000-000000000504",
         organization_id: organizationId,
         conversation_id: answerConversationId,
-        message_type: "partially_grounded_answer",
-        content: [
-          "最近的有据回答",
-          "现有知识暂时无法确认上海办公室信息。",
-          "现有知识对人工服务时间存在冲突。",
-        ].join("\n\n"),
-        status: "completed",
+        message_type: "grounded_answer",
+        content: "",
+        status: "pending",
         created_at: minutesAgo(30),
       },
       {
@@ -639,9 +657,9 @@ async function seedConversationReviewScenario(
         id: "00000000-0000-4000-8000-000000000522",
         organization_id: organizationId,
         conversation_id: failureConversationId,
-        message_type: "technical_failure",
-        content: "服务暂时不可用，请稍后重试。",
-        status: "failed",
+        message_type: "grounded_answer",
+        content: "",
+        status: "pending",
         created_at: minutesAgo(150),
       },
       {
@@ -656,129 +674,7 @@ async function seedConversationReviewScenario(
     ]);
   expect(messagesError).toBeNull();
 
-  const { error: factualRequestError } = await privilegedClient
-    .from("message_factual_requests")
-    .insert([
-      {
-        id: factualRequestId,
-        organization_id: organizationId,
-        conversation_id: answerConversationId,
-        visitor_message_id: "00000000-0000-4000-8000-000000000503",
-        assistant_message_id: "00000000-0000-4000-8000-000000000504",
-        request_order: 1,
-        original_text: "最近的问题",
-        normalized_question: "最近的问题",
-        completeness: "complete",
-        coverage_status: "supported",
-        missing_information: [],
-        clarification_round: 0,
-        request_analysis_version: "request-analysis-v1",
-        response_strategy_version: "response-strategy-v1",
-        response_content: "最近的有据回答",
-        response_status: "supported",
-      },
-      {
-        id: unsupportedFactualRequestId,
-        organization_id: organizationId,
-        conversation_id: answerConversationId,
-        visitor_message_id: "00000000-0000-4000-8000-000000000503",
-        assistant_message_id: "00000000-0000-4000-8000-000000000504",
-        request_order: 2,
-        original_text: "上海有办公室吗",
-        normalized_question: "上海有办公室吗",
-        completeness: "complete",
-        coverage_status: "unsupported",
-        missing_information: [],
-        clarification_round: 0,
-        request_analysis_version: "request-analysis-v1",
-        response_strategy_version: "response-strategy-v1",
-        response_content: "现有知识暂时无法确认上海办公室信息。",
-        response_status: "unsupported",
-      },
-      {
-        id: conflictingFactualRequestId,
-        organization_id: organizationId,
-        conversation_id: answerConversationId,
-        visitor_message_id: "00000000-0000-4000-8000-000000000503",
-        assistant_message_id: "00000000-0000-4000-8000-000000000504",
-        request_order: 3,
-        original_text: "人工服务时间是什么",
-        normalized_question: "人工服务时间是什么",
-        completeness: "complete",
-        coverage_status: "conflicting",
-        missing_information: [],
-        clarification_round: 0,
-        request_analysis_version: "request-analysis-v1",
-        response_strategy_version: "response-strategy-v1",
-        response_content: "现有知识对人工服务时间存在冲突。",
-        response_status: "conflicting",
-      },
-    ]);
-  expect(factualRequestError).toBeNull();
-
-  const { error: evidenceSnapshotError } = await privilegedClient
-    .from("evidence_snapshots")
-    .insert({
-      organization_id: organizationId,
-      conversation_id: answerConversationId,
-      factual_request_id: factualRequestId,
-      content_unit_id: contentUnitId,
-      knowledge_source_id: sourceId,
-      source_title: "生成时保存的标题",
-      source_url: "https://example.com/snapshot",
-      relationship: "supports",
-      exact_excerpt: "这是判定时采用的连续原文片段。",
-      decision_reason: "该片段直接回答事实诉求。",
-      coverage_decision_version: "evidence-coverage-v1",
-    });
-  expect(evidenceSnapshotError).toBeNull();
-
-  const { error: conflictingSnapshotsError } = await privilegedClient
-    .from("evidence_snapshots")
-    .insert(
-      conflictingContentUnitIds.map((id, index) => ({
-        organization_id: organizationId,
-        conversation_id: answerConversationId,
-        factual_request_id: conflictingFactualRequestId,
-        content_unit_id: id,
-        knowledge_source_id: conflictingSourceIds[index],
-        source_title: `冲突知识快照 ${index === 0 ? "A" : "B"}`,
-        source_url: `https://example.com/conflict-${index + 1}`,
-        relationship: "conflicts",
-        exact_excerpt: index === 0
-          ? "人工服务时间为工作日 09:00–18:00。"
-          : "人工服务时间为每日 08:00–20:00。",
-        decision_reason: "相同服务范围下的时间说明无法同时成立。",
-        coverage_decision_version: "evidence-coverage-v1",
-      })),
-    );
-  expect(conflictingSnapshotsError).toBeNull();
-
-  const { error: citationError } = await administratorClient
-    .from("citations")
-    .insert([
-      {
-        id: "00000000-0000-4000-8000-000000000601",
-        organization_id: organizationId,
-        conversation_id: answerConversationId,
-        message_id: "00000000-0000-4000-8000-000000000504",
-        factual_request_id: factualRequestId,
-        knowledge_source_id: sourceId,
-        source_title: "生成时保存的标题",
-        source_url: "https://example.com/snapshot",
-      },
-      ...conflictingSourceIds.map((knowledgeSourceId, index) => ({
-        id: `00000000-0000-4000-8000-00000000061${index + 1}`,
-        organization_id: organizationId,
-        conversation_id: answerConversationId,
-        message_id: "00000000-0000-4000-8000-000000000504",
-        factual_request_id: conflictingFactualRequestId,
-        knowledge_source_id: knowledgeSourceId,
-        source_title: `冲突知识快照 ${index === 0 ? "A" : "B"}`,
-        source_url: `https://example.com/conflict-${index + 1}`,
-      })),
-    ]);
-  expect(citationError).toBeNull();
+  await completeSeededMultiRequestDecision(privilegedClient);
 
   const callStages = [
     {
@@ -858,6 +754,15 @@ async function seedConversationReviewScenario(
   );
   expect(failureCallLogError).toBeNull();
 
+  const { error: failureCompletionError } = await privilegedClient.rpc(
+    "fail_public_conversation",
+    {
+      assistant_public_id: assistantPublicId,
+      target_conversation_id: failureConversationId,
+    },
+  );
+  expect(failureCompletionError).toBeNull();
+
   const { error: feedbackError } = await privilegedClient.rpc(
     "submit_public_quality_feedback",
     {
@@ -884,35 +789,140 @@ async function seedConversationReviewScenario(
     });
   expect(unresolvedError).toBeNull();
 
-  const { error: multiRequestUnresolvedError } = await administratorClient
-    .from("unresolved_questions")
-    .insert([
-      {
-        id: "00000000-0000-4000-8000-000000000803",
-        organization_id: organizationId,
-        conversation_id: answerConversationId,
-        question_message_id: "00000000-0000-4000-8000-000000000503",
-        answer_message_id: "00000000-0000-4000-8000-000000000504",
-        factual_request_id: unsupportedFactualRequestId,
-        question: "上海有办公室吗",
-        answer_content: "现有知识暂时无法确认上海办公室信息。",
-        citations: [],
-        trigger_type: "unsupported_factual_request",
-        status: "pending",
+}
+
+async function completeSeededMultiRequestDecision(
+  privilegedClient: SupabaseClient,
+) {
+  const supportedEvidence = {
+    contentUnitId,
+    knowledgeSourceId: sourceId,
+    sourceTitle: "生成时保存的标题",
+    sourceUrl: "https://example.com/snapshot",
+    relationship: "supports",
+    exactExcerpt: "这是判定时采用的连续原文片段。",
+    reason: "该片段直接回答事实诉求。",
+  };
+  const conflictEvidence = conflictingContentUnitIds.map((id, index) => ({
+    contentUnitId: id,
+    knowledgeSourceId: conflictingSourceIds[index],
+    sourceTitle: `冲突知识快照 ${index === 0 ? "A" : "B"}`,
+    sourceUrl: `https://example.com/conflict-${index + 1}`,
+    relationship: "conflicts",
+    exactExcerpt: index === 0
+      ? "人工服务时间为工作日 09:00–18:00。"
+      : "人工服务时间为每日 08:00–20:00。",
+    reason: "相同服务范围下的时间说明无法同时成立。",
+  }));
+  const { error } = await privilegedClient.rpc(
+    "complete_public_multi_request_decision",
+    {
+      assistant_public_id: assistantPublicId,
+      target_conversation_id: answerConversationId,
+      result_type: "partially_grounded_answer",
+      result_sections: [
+        {
+          id: factualRequestId,
+          order: 1,
+          title: "最近的问题",
+          status: "supported",
+          content: "最近的有据回答",
+          citations: [{
+            knowledgeSourceId: sourceId,
+            title: "生成时保存的标题",
+            url: "https://example.com/snapshot",
+          }],
+        },
+        {
+          id: unsupportedFactualRequestId,
+          order: 2,
+          title: "上海有办公室吗",
+          status: "unsupported",
+          content: "现有知识暂时无法确认上海办公室信息。",
+          citations: [],
+          contact: {
+            label: "联系业务团队",
+            url: "https://example.com/contact",
+          },
+        },
+        {
+          id: conflictingFactualRequestId,
+          order: 3,
+          title: "人工服务时间是什么",
+          status: "conflicting",
+          content: "现有知识对人工服务时间存在冲突。",
+          citations: conflictEvidence.map((evidence) => ({
+            knowledgeSourceId: evidence.knowledgeSourceId,
+            contentUnitId: evidence.contentUnitId,
+            title: evidence.sourceTitle,
+            url: evidence.sourceUrl,
+            exactExcerpt: evidence.exactExcerpt,
+          })),
+        },
+      ],
+      multi_request_decision: {
+        version: "multi-request-decision-v1",
+        requestAnalysisVersion: "request-analysis-v1",
+        responseStrategyVersion: "multi-request-response-v1",
+        resultType: "partially_grounded_answer",
+        requests: [
+          {
+            factualRequest: {
+              id: factualRequestId,
+              order: 1,
+              originalText: "最近的问题",
+              normalizedQuestion: "最近的问题",
+              completeness: "complete",
+              missingInformation: [],
+              clarificationRound: 0,
+            },
+            outcome: "supported",
+            coverage: {
+              version: "evidence-coverage-v1",
+              factualRequestId,
+              status: "supported",
+              evidence: [supportedEvidence],
+            },
+          },
+          {
+            factualRequest: {
+              id: unsupportedFactualRequestId,
+              order: 2,
+              originalText: "上海有办公室吗",
+              normalizedQuestion: "上海有办公室吗",
+              completeness: "complete",
+              missingInformation: [],
+              clarificationRound: 0,
+            },
+            outcome: "unsupported",
+            coverage: {
+              version: "evidence-coverage-v1",
+              factualRequestId: unsupportedFactualRequestId,
+              status: "unsupported",
+              evidence: [],
+            },
+          },
+          {
+            factualRequest: {
+              id: conflictingFactualRequestId,
+              order: 3,
+              originalText: "人工服务时间是什么",
+              normalizedQuestion: "人工服务时间是什么",
+              completeness: "complete",
+              missingInformation: [],
+              clarificationRound: 0,
+            },
+            outcome: "conflicting",
+            coverage: {
+              version: "evidence-coverage-v1",
+              factualRequestId: conflictingFactualRequestId,
+              status: "conflicting",
+              evidence: conflictEvidence,
+            },
+          },
+        ],
       },
-      {
-        id: "00000000-0000-4000-8000-000000000804",
-        organization_id: organizationId,
-        conversation_id: answerConversationId,
-        question_message_id: "00000000-0000-4000-8000-000000000503",
-        answer_message_id: "00000000-0000-4000-8000-000000000504",
-        factual_request_id: conflictingFactualRequestId,
-        question: "人工服务时间是什么",
-        answer_content: "现有知识对人工服务时间存在冲突。",
-        citations: [],
-        trigger_type: "knowledge_conflict",
-        status: "pending",
-      },
-    ]);
-  expect(multiRequestUnresolvedError).toBeNull();
+    },
+  );
+  expect(error).toBeNull();
 }

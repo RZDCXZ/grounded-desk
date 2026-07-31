@@ -96,7 +96,7 @@ export type RequestAnalysisDependencies = {
   };
 };
 
-type StructuredAssistantResponseInput = Omit<
+export type StructuredAssistantResponseInput = Omit<
   RequestAnalysisInput,
   "assistant"
 > & {

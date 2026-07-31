@@ -23,7 +23,9 @@
     "test:e2e:browser": "playwright test",
     "test:e2e": "pnpm db:reset && pnpm test:e2e:browser",
     "eval:retrieval": "node --env-file-if-exists=.env.local --conditions=react-server scripts/evaluate-retrieval.ts",
-    "test:deterministic": "pnpm typecheck && pnpm lint && pnpm test:service && pnpm db:reset && pnpm test:db && pnpm eval:retrieval",
+    "eval:decision": "node --env-file-if-exists=.env.local --conditions=react-server scripts/evaluate-decision-strategy.ts",
+    "eval:decision:live": "node --env-file-if-exists=.env.local --conditions=react-server scripts/evaluate-decision-strategy.ts --live --write-report",
+    "test:deterministic": "pnpm typecheck && pnpm lint && pnpm test:service && pnpm db:reset && pnpm test:db && pnpm eval:retrieval && pnpm eval:decision",
     "release:local": "pnpm test:deterministic && pnpm test:e2e:browser",
     "smoke:ai": "node --env-file-if-exists=.env.local --conditions=react-server scripts/smoke-live-ai.ts",
     "test": "pnpm release:local"
