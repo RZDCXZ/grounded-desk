@@ -210,8 +210,14 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
       status: 200,
     });
   });
-  await page.getByLabel("咨询问题").fill("你好");
-  await page.getByRole("button", { name: "发送问题" }).click();
+  const publicQuestion = page.getByLabel("咨询问题");
+  await publicQuestion.fill("你好");
+  await publicQuestion.press("Shift+Enter");
+  await expect(publicQuestion).toHaveValue("你好\n");
+  expect(ordinaryMessageRequests).toBe(0);
+  await publicQuestion.fill("你好");
+  await publicQuestion.press("Enter");
+  await expect(publicQuestion).toHaveValue("");
   await expect(
     page.getByText(
       "您好，我是演示业务顾问。您可以咨询演示业务范围。",

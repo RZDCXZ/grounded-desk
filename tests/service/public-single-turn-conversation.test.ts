@@ -7,6 +7,9 @@ import {
   type PublicConversationStart,
 } from "../../src/lib/assistant/public-conversation.ts";
 import {
+  createAssistantResponseConfiguration,
+} from "../../src/lib/assistant/business-configuration.ts";
+import {
   streamGroundedAnswer,
   type AssistantResponseEvent,
   type ConversationContextMessage,
@@ -651,6 +654,24 @@ test("纯中文问候由请求分析形成不调用知识链路的交流性回�
       citations: [],
     },
   ]);
+});
+
+test("交流性回应不会在服务范围已有结束标点时重复追加句号", async () => {
+  const assistant = createAssistantResponseConfiguration({
+    name: "演示业务顾问",
+    service_scope: "根据演示组织已启用的知识来源回答服务相关问题。",
+    tone: "professional",
+    human_contact_label: "联系业务团队",
+    human_contact_url: "https://example.com/contact",
+  });
+  const result = await runRoutedQuestion("Hi，你好", assistant);
+
+  assert.equal(
+    result.events[0]?.type === "text_delta"
+      ? result.events[0].delta
+      : null,
+    "您好，我是演示业务顾问。您可以咨询根据演示组织已启用的知识来源回答服务相关问题。",
+  );
 });
 
 test("纯致谢得到使用服务范围的受控交流性回应", async () => {

@@ -631,6 +631,8 @@ function AssistantPreview({
       return;
     }
 
+    setQuestion("");
+
     const controller = new AbortController();
     let completedContent = "";
     let completedResultType: ConversationResultType | undefined;

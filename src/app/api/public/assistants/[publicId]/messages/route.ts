@@ -3,6 +3,7 @@ import {
   type PublicConversationBlocked,
   type PublicConversationStart,
 } from "@/lib/assistant/public-conversation";
+import { createAssistantResponseConfiguration } from "@/lib/assistant/business-configuration";
 import {
   streamReleasedSectionedAssistantResponse,
 } from "@/lib/assistant/response-decision-release";
@@ -215,12 +216,6 @@ function mapConversation(
         }
       : {}),
     context: row.context_messages ?? [],
-    assistant: {
-      name: row.name,
-      serviceScope: row.service_scope,
-      tone: row.tone,
-      humanContactLabel: row.human_contact_label,
-      humanContactUrl: row.human_contact_url,
-    },
+    assistant: createAssistantResponseConfiguration(row),
   };
 }

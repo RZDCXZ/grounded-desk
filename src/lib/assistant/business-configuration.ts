@@ -48,6 +48,24 @@ export type AssistantBusinessConfigurationActionState =
       errors?: undefined;
     };
 
+export function createAssistantResponseConfiguration(assistant: {
+  name: string;
+  service_scope: string;
+  tone: string;
+  human_contact_label: string;
+  human_contact_url: string;
+}) {
+  return {
+    name: assistant.name,
+    serviceScope: assistant.service_scope
+      .trim()
+      .replace(/[。！？.!?]+$/u, ""),
+    tone: assistant.tone,
+    humanContactLabel: assistant.human_contact_label,
+    humanContactUrl: assistant.human_contact_url,
+  };
+}
+
 type ValidAssistantBusinessConfiguration = Omit<
   AssistantBusinessConfigurationValues,
   "tone"

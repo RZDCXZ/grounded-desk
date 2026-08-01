@@ -1,4 +1,5 @@
 import { createAssistantPreviewResponse } from "@/lib/assistant/preview-response";
+import { createAssistantResponseConfiguration } from "@/lib/assistant/business-configuration";
 import {
   streamReleasedSectionedAssistantResponse,
 } from "@/lib/assistant/response-decision-release";
@@ -40,13 +41,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const assistantConfiguration = {
-    name: assistant.name,
-    serviceScope: assistant.service_scope,
-    tone: assistant.tone,
-    humanContactLabel: assistant.human_contact_label,
-    humanContactUrl: assistant.human_contact_url,
-  };
+  const assistantConfiguration =
+    createAssistantResponseConfiguration(assistant);
   const question = questionResult.question;
   const factualRequestId = crypto.randomUUID();
   const analysisInput = {

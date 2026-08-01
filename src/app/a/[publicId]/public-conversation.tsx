@@ -11,7 +11,13 @@ import {
   ThumbsUp,
   UserCheck,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 
 import { BrandMark } from "@/components/admin/brand-mark";
 import { CitationList } from "@/components/assistant/citation-list";
@@ -114,6 +120,19 @@ export function PublicConversation({
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await requestAnswer(question.trim());
+  }
+
+  function submitQuestionOnEnter(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
   }
 
   async function requestAnswer(
@@ -462,6 +481,7 @@ export function PublicConversation({
                 id="public-conversation-question"
                 maxLength={2000}
                 onChange={(event) => setQuestion(event.target.value)}
+                onKeyDown={submitQuestionOnEnter}
                 placeholder="请输入一个与服务相关的问题"
                 value={question}
               />

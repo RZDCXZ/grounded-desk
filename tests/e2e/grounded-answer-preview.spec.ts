@@ -96,6 +96,7 @@ test("管理员预览流式有据回答并在完成后核查服务端引用", as
   await expect(
     page.getByText("你们提供什么服务，工作日多久响应？", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByLabel("预览问题")).toHaveValue("");
   const factualRequest = page.getByRole("region", {
     name: "事实诉求 1",
   });
@@ -272,7 +273,7 @@ test("管理员预览把交流性回应和澄清提问呈现为无附加动作�
   ).toHaveCount(0);
 });
 
-test("技术故障保留问题并允许成功重试且不重复显示回答", async ({
+test("技术故障清空输入并允许成功重试且不重复显示回答", async ({
   page,
   request,
 }) => {
@@ -330,9 +331,7 @@ test("技术故障保留问题并允许成功重试且不重复显示回答", as
   await expect(
     page.getByRole("link", { name: "联系业务团队" }),
   ).toHaveAttribute("href", "https://example.com/contact");
-  await expect(page.getByLabel("预览问题")).toHaveValue(
-    "你们提供什么服务？",
-  );
+  await expect(page.getByLabel("预览问题")).toHaveValue("");
 
   await page.getByRole("button", { name: "重试预览" }).click();
 
