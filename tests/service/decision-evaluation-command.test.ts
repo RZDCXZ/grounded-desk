@@ -13,14 +13,14 @@ test("独立命令运行版本化决策评测并证明结构化策略达到发�
   const result = await runDecisionEvaluation();
 
   assert.equal(result.exitCode, 0, result.stderr);
-  assert.equal(result.summary.dataset.version, "decision-contract-v1");
+  assert.equal(result.summary.dataset.version, "decision-contract-v2");
   assert.equal(
     result.summary.strategy.version,
-    "structured-evidence-v1.a13dc1d89b2b",
+    "structured-evidence-v1.ca387839e51a",
   );
   assert.equal(
     result.summary.strategy.contractFingerprint.slice(0, 12),
-    "a13dc1d89b2b",
+    "ca387839e51a",
   );
   assert.equal(result.summary.strategy.evaluationMode, "contract");
   assert.ok(result.summary.dataset.total >= 24);
@@ -99,6 +99,7 @@ test("决策评测集逐题标注诉求、完整性、覆盖、结果、引用�
       "clarification",
       "human_handoff",
       "conversational",
+      "unclear",
       "mixed",
       "out_of_scope",
       "prompt_injection",

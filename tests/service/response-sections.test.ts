@@ -215,7 +215,46 @@ test("公开端和预览端可通过同一归并器消费分段回答", () => {
     resultType: "grounded_answer",
     answer: "我们提供知识整理服务。",
     citations: [],
+    sections: undefined,
   });
+});
+
+test("单项交流性回应完成后清除流式分段并恢复普通助手气泡", () => {
+  const section = {
+    id: "00000000-0000-4000-8000-000000001704",
+    order: 1,
+    status: "conversational" as const,
+    content: "您好，请问有什么可以帮您？",
+    citations: [],
+  };
+  const streaming = reduceAssistantResponsePresentation(
+    {
+      answer: section.content,
+      citations: [],
+    },
+    {
+      type: "section_complete",
+      section,
+    },
+  );
+  assert.ok(streaming);
+  const completed = reduceAssistantResponsePresentation(
+    streaming,
+    {
+      type: "message_complete",
+      resultType: "conversational_response",
+      sections: [section],
+    },
+  );
+  assert.ok(completed);
+  const merged = {
+    ...streaming,
+    ...completed,
+  };
+
+  assert.equal(merged.status, "complete");
+  assert.equal(merged.answer, section.content);
+  assert.equal(merged.sections, undefined);
 });
 
 test("共享归并器在消息完成前保持拒答分段为流式状态", () => {

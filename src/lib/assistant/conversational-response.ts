@@ -16,7 +16,8 @@ export type ConversationalCategory =
   | "farewell"
   | "identity"
   | "capability"
-  | "out_of_scope";
+  | "out_of_scope"
+  | "unclear";
 
 type ConversationalAssistant = {
   name: string;
@@ -59,7 +60,15 @@ function createConversationalContent(
   const tone = isAssistantTone(assistant.tone)
     ? assistant.tone
     : "professional";
-  return conversationalTemplates[category][language][tone](assistant);
+  const configuredLanguage = detectQuestionLanguage(
+    `${assistant.name} ${assistant.serviceScope}`,
+  );
+  const responseLanguage = category === "unclear"
+    ? language
+    : configuredLanguage;
+  return conversationalTemplates[category][responseLanguage][tone](
+    assistant,
+  );
 }
 
 const conversationalTemplates: Record<
@@ -175,6 +184,22 @@ const conversationalTemplates: Record<
         `Sorry, I can't take on that request, but I'd be happy to help with ${assistant.serviceScope}.`,
       concise: (assistant) =>
         `I can't handle that request. I can help with ${assistant.serviceScope}.`,
+    },
+  },
+  unclear: {
+    zh: {
+      professional: () =>
+        "我还不确定您的意思。请告诉我您想了解什么。",
+      friendly: () =>
+        "我还不太确定你的意思，可以告诉我你想了解什么吗？",
+      concise: () => "请说明您想了解的问题。",
+    },
+    en: {
+      professional: () =>
+        "I'm not sure what you mean. Please tell me what you'd like help with.",
+      friendly: () =>
+        "I'm not quite sure what you mean. What would you like help with?",
+      concise: () => "Please tell me what you'd like help with.",
     },
   },
 };

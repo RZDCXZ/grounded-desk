@@ -224,14 +224,14 @@ test("管理员复盘最近会话、保留引用快照并确认删除关联数�
     "响应策略 multi-request-response-v1",
   );
   await expect(decisionAudit).toContainText(
-    "发布策略 structured-evidence-v1.a13dc1d89b2b",
+    "发布策略 structured-evidence-v1.ca387839e51a",
   );
   const releaseGate = decisionAudit.getByRole("region", {
     name: "响应决策发布验证",
   });
   await expect(releaseGate).toContainText("发布门槛：已通过");
-  await expect(releaseGate).toContainText("评测集 decision-contract-v1");
-  await expect(releaseGate).toContainText("验证日期 2026-07-31");
+  await expect(releaseGate).toContainText("评测集 decision-contract-v2");
+  await expect(releaseGate).toContainText("验证日期 2026-08-01");
   await expect(releaseGate).toContainText(
     "来源外事实 0 · 不可验证证据 0 · 错误引用 0 · 技术故障伪装拒答 0",
   );

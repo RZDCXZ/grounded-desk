@@ -789,6 +789,7 @@ function isConversationalIntent(
     value === "farewell" ||
     value === "identity" ||
     value === "capability" ||
-    value === "out_of_scope"
+    value === "out_of_scope" ||
+    value === "unclear"
   );
 }

@@ -25,6 +25,7 @@ export type DecisionEvaluationCategory =
   | "clarification"
   | "human_handoff"
   | "conversational"
+  | "unclear"
   | "mixed"
   | "out_of_scope"
   | "prompt_injection"
@@ -352,6 +353,13 @@ export const decisionEvaluationCases: DecisionEvaluationCase[] = [
     question: "嗨，今天过得怎样？",
     language: "zh",
     intent: "greeting",
+  }),
+  conversationalCase({
+    id: "en-conversational-unclear",
+    categories: ["conversational", "unclear"],
+    question: "man!",
+    language: "en",
+    intent: "unclear",
   }),
   conversationalCase({
     id: "en-out-of-scope",

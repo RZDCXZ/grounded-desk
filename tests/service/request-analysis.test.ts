@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { ProviderCallError } from "../../src/lib/ai/provider-call.ts";
 import {
+  createRequestAnalysisInstruction,
   createRequestAnalysisPrompt,
 } from "../../src/lib/ai/request-analysis-provider.ts";
 import {
@@ -49,6 +50,17 @@ test("请求分析供应商收到逐诉求澄清状态以稳定延续原始诉�
   assert.match(prompt, /"originalText":"发票"/u);
   assert.match(prompt, /"originalText":"账户"/u);
   assert.match(prompt, /避免重复上一轮问题/u);
+});
+
+test("请求分析明确将无事实诉求的含糊碎片标记为意图不明确", () => {
+  const instruction = createRequestAnalysisInstruction();
+
+  assert.match(instruction, /man!/u);
+  assert.match(instruction, /unclear/u);
+  assert.match(
+    instruction,
+    /你们提供什么服务，工作日多久响应/u,
+  );
 });
 
 test("请求分析器严格返回版本化且有顺序的最多三项事实诉求", async () => {
@@ -408,7 +420,7 @@ for (const scenario of [
     language: "en",
     intent: "gratitude",
     expected:
-      "You're welcome. I can continue to help if you'd like to learn more about 退款与发票服务.",
+      "不客气。如果您还想了解退款与发票服务，我可以继续协助。",
   },
   {
     name: "中英混合身份询问",
@@ -439,7 +451,15 @@ for (const scenario of [
     language: "en",
     intent: "out_of_scope",
     expected:
-      "Sorry, I can't handle that request. I can assist with 退款与发票服务.",
+      "抱歉，我不能处理这个请求。我可以协助您了解退款与发票服务。",
+  },
+  {
+    name: "英文含糊短输入",
+    question: "man!",
+    language: "en",
+    intent: "unclear",
+    expected:
+      "I'm not sure what you mean. Please tell me what you'd like help with.",
   },
 ] as const) {
   test(`结构化分析驱动受控交流模板：${scenario.name}`, async () => {

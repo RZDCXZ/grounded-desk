@@ -32,6 +32,7 @@ export const responseDecisionContractFiles = [
   "supabase/migrations/20260730250000_persist_multi_request_decisions.sql",
   "supabase/migrations/20260730270000_review_structured_response_decisions.sql",
   "supabase/migrations/20260730290000_gate_and_switch_response_decision_strategy.sql",
+  "supabase/migrations/20260801090000_release_unclear_conversation_strategy.sql",
 ] as const;
 
 export async function createResponseDecisionContractFingerprint() {

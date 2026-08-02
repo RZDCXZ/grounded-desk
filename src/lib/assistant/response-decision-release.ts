@@ -11,16 +11,16 @@ import type {
 } from "./response-sections.ts";
 
 export const RESPONSE_DECISION_STRATEGY_VERSION =
-  "structured-evidence-v1.a13dc1d89b2b" as const;
+  "structured-evidence-v1.ca387839e51a" as const;
 
 export const DECISION_EVALUATION_DATASET_VERSION =
-  "decision-contract-v1" as const;
+  "decision-contract-v2" as const;
 
 export const APPROVED_RESPONSE_DECISION_CONTRACT_FINGERPRINT =
-  "a13dc1d89b2b8f094db5250a1cb9208930b1c1ef80ac4063886bfbf5bc8dd20a" as const;
+  "ca387839e51a0ed34864b7fb943ebb1dbdb9544c9cde86d119efda4c54e247b4" as const;
 
 export const APPROVED_DECISION_EVALUATOR_FINGERPRINT =
-  "47f92e402b6ad64a9b240d990589d36a63ab6367aad3cec0e472e62628f19d61" as const;
+  "0ce1c9ab20a110ddba2a67bbcd9263c6f09f6a28ef5bf41c44380014274597ae" as const;
 
 export const responseDecisionRelease = {
   strategyVersion: RESPONSE_DECISION_STRATEGY_VERSION,
@@ -45,7 +45,7 @@ export const responseDecisionRelease = {
       rerankNoiseFloor: 0.05,
     },
   },
-  evaluatedAt: "2026-07-31",
+  evaluatedAt: "2026-08-01",
   status: "passed",
   safety: {
     unsupportedFacts: 0,

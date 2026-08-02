@@ -200,6 +200,7 @@ export function reduceAssistantResponsePresentation(
       resultType: event.resultType,
       answer: section?.content ?? current.answer,
       citations: section?.citations ?? current.citations,
+      sections: undefined,
       ...(event.resultType === "partially_grounded_answer" ||
           event.sections.length > 1
         ? { sections: event.sections }
