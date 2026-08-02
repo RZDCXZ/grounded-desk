@@ -26,6 +26,7 @@
     "eval:decision": "node --env-file-if-exists=.env.local --conditions=react-server scripts/evaluate-decision-strategy.ts",
     "eval:decision:live": "node --env-file-if-exists=.env.local --conditions=react-server scripts/evaluate-decision-strategy.ts --live --write-report",
     "test:deterministic": "pnpm typecheck && pnpm lint && pnpm test:service && pnpm db:reset && pnpm test:db && pnpm eval:retrieval && pnpm eval:decision",
+    "ci:preflight": "node scripts/check-ci-release.ts",
     "release:local": "node scripts/run-local-release.ts",
     "release:cloud:preflight": "NODE_ENV=production node --env-file-if-exists=.env.production.local scripts/check-cloud-release.ts",
     "release:cloud:bootstrap": "NODE_ENV=production node --env-file-if-exists=.env.production.local scripts/bootstrap-cloud.ts",

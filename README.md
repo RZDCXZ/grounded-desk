@@ -87,6 +87,16 @@ pnpm release:local
 
 任一步失败都会以非零状态停止，不能进入云端发布。普通门槛显式使用确定性向量、重排和回答提供器，不需要 `DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY` 或真实模型额度。
 
+### 持续集成
+
+GitHub Actions 会在目标分支为 `main` 的所有 Pull Request（包括草稿）以及每次推送到 `main` 时运行同一套 `pnpm release:local`。同一 Pull Request 的新提交会取消尚未完成的旧运行；`main` 上的运行不会互相取消。工作流不使用路径过滤，因此文档、应用、数据库和测试的任何变更都会经过完整门槛。
+
+CI 使用标准 GitHub 托管的 `ubuntu-24.04` runner、Node.js 24 和仓库固定的 pnpm 11.13.0。它不使用大型或收费 runner，不启用依赖缓存，不上传测试 artifact，只保留 GitHub Actions 日志。外部 Actions 固定到完整 commit SHA，工作流令牌只有读取仓库内容的权限。
+
+工作流只启动 runner 内的临时 Supabase 实例。`pnpm ci:preflight` 会拒绝真实 AI 密钥、Supabase Cloud 项目配置、预置的 Supabase secret 和 Vercel 凭据，再从当前本地 Supabase CLI 导出测试所需的 URL、publishable key 与 secret key；API URL 不是 `http://127.0.0.1:54321` 时立即失败。`RUN_LIVE_AI_SMOKE` 必须保持关闭，因此 CI 只使用确定性提供器和离线评测。
+
+GitHub Actions 不执行 Supabase Cloud 发布，也不调用 Vercel 部署命令。Vercel Preview 与 Production 继续由现有 Vercel Git 集成负责。
+
 ### 分层运行
 
 | 检查 | 命令 | 是否重置数据库 | 是否消耗真实模型额度 |
