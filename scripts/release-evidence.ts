@@ -51,11 +51,8 @@ export function readReleaseSourceRevision(
   environment: NodeJS.ProcessEnv = process.env,
 ) {
   const configuredRevision = environment.RELEASE_SOURCE_REVISION;
-  if (configuredRevision) {
-    if (!/^[0-9a-f]{40}$/u.test(configuredRevision)) {
-      throw new Error("RELEASE_SOURCE_REVISION 必须是 40 位 Git SHA");
-    }
-    return configuredRevision;
+  if (configuredRevision && !/^[0-9a-f]{40}$/u.test(configuredRevision)) {
+    throw new Error("RELEASE_SOURCE_REVISION 必须是 40 位 Git SHA");
   }
 
   const result = spawnSync("git", ["rev-parse", "HEAD"], {
@@ -64,6 +61,9 @@ export function readReleaseSourceRevision(
   const revision = result.stdout.trim();
   if (result.status !== 0 || !/^[0-9a-f]{40}$/u.test(revision)) {
     throw new Error("无法确定发布证据对应的 Git revision");
+  }
+  if (configuredRevision && configuredRevision !== revision) {
+    throw new Error("RELEASE_SOURCE_REVISION 与当前 Git HEAD 不一致");
   }
   return revision;
 }

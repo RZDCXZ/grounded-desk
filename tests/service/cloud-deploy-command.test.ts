@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const projectDirectory = fileURLToPath(new URL("../..", import.meta.url));
-const sourceRevision = "1234567890abcdef1234567890abcdef12345678";
+const sourceRevision = spawnSync("git", ["rev-parse", "HEAD"], {
+  cwd: projectDirectory,
+  encoding: "utf8",
+}).stdout.trim();
 
 test("云端发布按预检、迁移试跑、迁移、生产配置和必要初始化顺序执行", async () => {
   const evidenceDirectory = await createPrerequisiteEvidence();

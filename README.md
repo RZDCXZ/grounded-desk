@@ -71,11 +71,10 @@ pnpm release:local
 
 ```bash
 export RELEASE_EVIDENCE_DIR=.release-evidence
-export RELEASE_SOURCE_REVISION=<40-character-git-sha>
 pnpm release:local
 ```
 
-`.release-evidence/` 已被 Git 忽略。未设置该目录时命令只执行门槛，不写发布证据。
+`.release-evidence/` 已被 Git 忽略。未设置该目录时命令只执行门槛，不写发布证据。证据命令默认读取真实 `git rev-parse HEAD`；若显式传入 `RELEASE_SOURCE_REVISION`，它必须与当前 HEAD 完全一致。
 
 `pnpm test` 是同一门槛的短别名。命令按顺序完成：
 
@@ -189,7 +188,6 @@ RUN_LIVE_AI_SMOKE=true pnpm smoke:ai
 
 ```bash
 export RELEASE_EVIDENCE_DIR=.release-evidence
-export RELEASE_SOURCE_REVISION=<40-character-git-sha>
 pnpm release:local
 RUN_LIVE_AI_SMOKE=true pnpm smoke:ai
 ```

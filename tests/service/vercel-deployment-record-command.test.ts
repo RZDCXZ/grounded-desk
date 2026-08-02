@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -9,7 +9,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const projectDirectory = fileURLToPath(new URL("../..", import.meta.url));
-const sourceRevision = "1234567890abcdef1234567890abcdef12345678";
+const sourceRevision = spawnSync("git", ["rev-parse", "HEAD"], {
+  cwd: projectDirectory,
+  encoding: "utf8",
+}).stdout.trim();
 const deploymentId = "dpl_1234567890abcdef";
 const projectId = "prj_1234567890abcdef";
 
