@@ -51,6 +51,9 @@ test("云端公开页与嵌入入口通过有据回答、引用和下线状态�
     );
 
     const embedHost = await context.newPage();
+    await embedHost.goto(
+      `${publicUrl}?cloud-smoke-host=${Date.now()}`,
+    );
     await embedHost.setContent(
       `<!doctype html><html><body><main>GroundedDesk cloud smoke host</main><script async src="${escapeAttribute(embedScriptUrl)}"></script></body></html>`,
     );
@@ -113,8 +116,18 @@ async function askGroundedQuestion(
   question: string,
   expectedSourceTitle: string,
 ) {
-  await page.getByLabel("咨询问题").fill(question);
-  await page.getByLabel("咨询问题").press("Enter");
+  const questionInput = page.getByLabel("咨询问题");
+  const sendButton = page.getByRole("button", { name: "发送问题" });
+  let readinessAttempt = 0;
+  await expect(async () => {
+    readinessAttempt += 1;
+    await questionInput.fill(
+      `${question}${readinessAttempt % 2 === 0 ? " " : ""}`,
+    );
+    await expect(sendButton).toBeEnabled({ timeout: 500 });
+  }).toPass({ timeout: 10_000 });
+  await questionInput.fill(question);
+  await questionInput.press("Enter");
   await expect(page.getByText("回答依据", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("link", {

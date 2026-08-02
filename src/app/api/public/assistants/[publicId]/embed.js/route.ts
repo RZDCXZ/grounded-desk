@@ -18,6 +18,13 @@ export async function GET(
   });
   const assistant = (data as PublishedAssistant[] | null)?.[0];
 
+  if (error) {
+    console.error("读取嵌入助手失败", {
+      code: error.code,
+      message: error.message,
+    });
+  }
+
   if (error || !assistant) {
     return new Response("/* 该助手当前不可公开访问。 */", {
       status: 404,

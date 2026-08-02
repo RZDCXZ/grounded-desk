@@ -31,6 +31,13 @@ export default async function PublicAssistantPage({
   });
   const assistant = (data as PublicAssistant[] | null)?.[0];
 
+  if (error) {
+    console.error("读取公开助手失败", {
+      code: error.code,
+      message: error.message,
+    });
+  }
+
   if (error || !assistant) {
     notFound();
   }
