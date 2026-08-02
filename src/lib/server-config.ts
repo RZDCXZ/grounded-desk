@@ -1,5 +1,8 @@
 import "server-only";
 
+const VERCEL_PREVIEW_HOSTNAME =
+  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.vercel\.app$/;
+
 export function readIntegerServerConfig(
   environment: NodeJS.ProcessEnv,
   name: string,
@@ -35,6 +38,10 @@ export function readNumberServerConfig(
 export function getApplicationUrl(
   environment: NodeJS.ProcessEnv = process.env,
 ) {
+  if (environment.VERCEL_ENV === "preview") {
+    return getVercelPreviewOrigin(environment);
+  }
+
   const configuredUrl =
     environment.APP_URL ??
     (environment.NODE_ENV === "production"
@@ -46,6 +53,12 @@ export function getApplicationUrl(
   }
 
   return readHttpOrigin(configuredUrl, "APP_URL");
+}
+
+export function getAuthConfirmationUrl(
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  return new URL("/auth/confirm", getApplicationUrl(environment)).href;
 }
 
 export function getEmbedApplicationUrl(
@@ -85,4 +98,30 @@ function readHttpOrigin(value: string, name: string) {
   }
 
   return url.origin;
+}
+
+function getVercelPreviewOrigin(environment: NodeJS.ProcessEnv) {
+  if (environment.VERCEL !== "1") {
+    throw new Error("Vercel Preview 必须提供系统环境变量 VERCEL=1");
+  }
+
+  if (environment.VERCEL_TARGET_ENV !== "preview") {
+    throw new Error(
+      "Vercel Preview 必须提供系统环境变量 VERCEL_TARGET_ENV=preview",
+    );
+  }
+
+  const hostname = environment.VERCEL_BRANCH_URL;
+
+  if (!hostname || !VERCEL_PREVIEW_HOSTNAME.test(hostname)) {
+    throw new Error(
+      "Vercel Preview 的系统环境变量 VERCEL_BRANCH_URL 必须是裸 vercel.app 主机名",
+    );
+  }
+
+  if (hostname === environment.VERCEL_PROJECT_PRODUCTION_URL) {
+    throw new Error("Vercel Preview 的分支地址不能等于 Production 地址");
+  }
+
+  return `https://${hostname}`;
 }
