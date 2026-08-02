@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import {
-  copyFile,
   mkdir,
   mkdtemp,
   readdir,
@@ -135,10 +134,9 @@ async function withRenderedProductionConfig(
     join(tmpdir(), "groundeddesk-cloud-config-"),
   );
   const supabaseDirectory = join(temporaryDirectory, "supabase");
-  const templateDirectory = join(supabaseDirectory, "templates");
 
   try {
-    await mkdir(templateDirectory, { recursive: true });
+    await mkdir(supabaseDirectory, { recursive: true });
     const template = await readFile(
       resolve(projectDirectory, "supabase/config.production.toml"),
       "utf8",
@@ -151,10 +149,6 @@ async function withRenderedProductionConfig(
       throw new Error("生产 Supabase 配置仍含未解析占位符");
     }
     await writeFile(join(supabaseDirectory, "config.toml"), rendered, "utf8");
-    await copyFile(
-      resolve(projectDirectory, "supabase/templates/magic-link.html"),
-      join(templateDirectory, "magic-link.html"),
-    );
     await operation(temporaryDirectory);
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });

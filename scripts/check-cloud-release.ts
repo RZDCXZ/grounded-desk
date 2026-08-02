@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -129,9 +129,7 @@ async function checkCloudRelease(environment: NodeJS.ProcessEnv) {
     errors.push("没有可发布的版本化迁移");
   }
   await requireFile("supabase/config.production.toml", errors);
-  await requireFile("supabase/templates/magic-link.html", errors);
   await requireFile("scripts/bootstrap-cloud.ts", errors);
-  await validateProductionTemplatePath(errors);
 
   if (errors.length > 0) {
     throw new Error(errors.join("；"));
@@ -240,22 +238,5 @@ async function validatePrerequisiteEvidence(
         error instanceof Error ? error.message : `${check} 发布证据无效`,
       );
     }
-  }
-}
-
-async function validateProductionTemplatePath(errors: string[]) {
-  try {
-    const configuration = await readFile(
-      resolve(projectDirectory, "supabase/config.production.toml"),
-      "utf8",
-    );
-    if (
-      !/^content_path = "\.\/supabase\/templates\/magic-link\.html"$/mu
-        .test(configuration)
-    ) {
-      errors.push("生产 Magic Link 模板路径必须相对于 Supabase workdir");
-    }
-  } catch {
-    // requireFile 会提供缺失资产的统一诊断。
   }
 }

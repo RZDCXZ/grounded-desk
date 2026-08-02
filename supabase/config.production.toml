@@ -13,7 +13,3 @@ enable_manual_linking = false
 [auth.email]
 enable_signup = true
 enable_confirmations = false
-
-[auth.email.template.magic_link]
-subject = "登录 GroundedDesk"
-content_path = "./supabase/templates/magic-link.html"

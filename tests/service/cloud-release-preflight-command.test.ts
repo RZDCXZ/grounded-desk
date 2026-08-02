@@ -159,15 +159,13 @@ test("云端发布预检拒绝缺失、跳过或不同源码版本的前置证�
   }
 });
 
-test("生产 Magic Link 模板路径相对于 Supabase workdir 可解析", async () => {
+test("生产配置使用 Supabase 默认 Magic Link 邮件模板", async () => {
   const configuration = await readFile(
     join(projectDirectory, "supabase/config.production.toml"),
     "utf8",
   );
-  assert.match(
-    configuration,
-    /^content_path = "\.\/supabase\/templates\/magic-link\.html"$/mu,
-  );
+  assert.doesNotMatch(configuration, /\[auth\.email\.template\.magic_link\]/u);
+  assert.doesNotMatch(configuration, /^content_path\s*=/mu);
 });
 
 function validEnvironment(): NodeJS.ProcessEnv {

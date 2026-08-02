@@ -198,7 +198,7 @@ RUN_LIVE_AI_SMOKE=true pnpm smoke:ai
 
 创建空项目后，把 `.env.production.example` 复制为被 Git 忽略的 `.env.production.local` 并填入真实值。新项目应使用 `sb_publishable_…` 与 `sb_secret_…`；secret key 只在维护者本机发布命令和 Vercel 服务端使用。
 
-Supabase 新 Free 项目如需推送自定义 Magic Link 模板，必须先配置自定义 SMTP，或使用允许模板自定义的计划。完成后运行：
+生产配置不包含自定义 Magic Link 模板，直接使用 Supabase 托管项目的默认模板和内置邮件发送能力，不要求购买 SMTP 服务。完成后运行：
 
 ```bash
 pnpm release:cloud:preflight
