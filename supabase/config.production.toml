@@ -1,0 +1,19 @@
+project_id = "__SUPABASE_PROJECT_REF__"
+
+[auth]
+site_url = "__APP_URL__"
+additional_redirect_urls = [
+  "__APP_URL__/auth/confirm",
+  "__EMBED_APP_URL__/auth/confirm"
+]
+enable_signup = false
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[auth.email.template.magic_link]
+subject = "登录 GroundedDesk"
+content_path = "./templates/magic-link.html"

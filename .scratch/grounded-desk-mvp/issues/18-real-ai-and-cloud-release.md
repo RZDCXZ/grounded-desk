@@ -4,7 +4,7 @@
 
 **Blocked by:** 17 — 通过本地 MVP 发布门槛.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 独立真实 AI 冒烟命令调用硅基流动 Embedding、Rerank 和 DeepSeek，完成至少一个有据回答、一个可靠拒答和一次多轮追问。
 - [ ] 有据回答引用预期知识来源，可靠拒答不添加来源外事实，真实供应商调用失败时输出可诊断结果。

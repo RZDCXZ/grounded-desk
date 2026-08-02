@@ -65,7 +65,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   const scenarioId = Date.now();
   const conversationalQuestion = "你好";
   const clarificationQuestion = "退款";
-  const sourceMarker = `PUBLIC-SERVICE-${scenarioId}`;
+  const sourceMarker = `PUBLIC-SERVICE-MAIN-CLOSURE-${scenarioId}`;
   const sourceTitle = `受控网页服务说明 ${sourceMarker}`;
   const sourceUrl =
     `http://127.0.0.1:4173/article?marker=${encodeURIComponent(sourceMarker)}`;
@@ -107,17 +107,21 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   await page.getByRole("link", { name: "助手", exact: true }).click();
   await page
     .getByLabel("预览问题")
-    .fill(`${sourceMarker} 你们提供什么服务，工作日多久响应？`);
+    .fill(
+      "PUBLIC-SERVICE-MAIN-CLOSURE 你们提供什么服务，工作日多久响应？",
+    );
   await page.getByRole("button", { name: "发送问题" }).click();
   const previewFactualRequest = page.getByRole("region", {
-    name: "事实诉求 1",
+    name: "你们提供什么服务",
   });
   await expect(previewFactualRequest).toContainText("已回答");
   await expect(previewFactualRequest).toContainText(
     "工作日问题会在两个工作小时内确认",
   );
   await expect(
-    page.getByRole("link", { name: new RegExp(sourceTitle) }),
+    previewFactualRequest.getByRole("link", {
+      name: new RegExp(sourceTitle),
+    }),
   ).toHaveAttribute("href", sourceUrl);
 
   await page.getByRole("button", { name: "发布助手" }).click();

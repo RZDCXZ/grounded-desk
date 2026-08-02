@@ -62,6 +62,7 @@ test("管理员预览流式有据回答并在完成后核查服务端引用", as
 
   await signInAsAdministrator(page, request);
   await page.goto("/admin/knowledge-sources");
+  await disableAllKnowledgeSources(page);
   await page.getByRole("button", { name: "添加知识来源" }).click();
   await page.getByRole("tab", { name: "手工内容" }).click();
   await page.getByLabel("标题", { exact: true }).fill(sourceTitle);
@@ -98,14 +99,16 @@ test("管理员预览流式有据回答并在完成后核查服务端引用", as
   ).toBeVisible();
   await expect(page.getByLabel("预览问题")).toHaveValue("");
   const factualRequest = page.getByRole("region", {
-    name: "事实诉求 1",
+    name: "你们提供什么服务",
   });
   await expect(factualRequest).toContainText("已回答");
   await expect(factualRequest).toContainText(
     "知识整理、来源核查和有据回答配置服务",
   );
-  await expect(page.getByText("回答依据", { exact: true })).toBeVisible();
-  const citation = page.getByRole("link", {
+  await expect(
+    factualRequest.getByText("回答依据", { exact: true }),
+  ).toBeVisible();
+  const citation = factualRequest.getByRole("link", {
     name: new RegExp(sourceTitle),
   });
   await expect(citation).toHaveAttribute(
@@ -116,7 +119,7 @@ test("管理员预览流式有据回答并在完成后核查服务端引用", as
     "https://example.com/preview-services",
   );
   await expect(
-    page.getByText("有依据", { exact: true }),
+    factualRequest.getByText("有依据", { exact: true }),
   ).toBeVisible();
 });
 
@@ -409,3 +412,33 @@ test("回答正文只渲染受控 Markdown 并移除危险内容", async ({
     await page.evaluate(() => "__markdownXss" in window),
   ).toBe(false);
 });
+
+async function disableAllKnowledgeSources(page: Page) {
+  const disableSourceButtons = page.getByRole("button", {
+    name: "停用",
+    exact: true,
+  });
+  while ((await disableSourceButtons.count()) > 0) {
+    const activeSourceRow = disableSourceButtons
+      .first()
+      .locator("xpath=ancestor::tr");
+    const sourceTitle = await activeSourceRow
+      .locator("td")
+      .first()
+      .locator("p")
+      .first()
+      .innerText();
+    const sourceRow = page
+      .getByRole("row")
+      .filter({ has: page.getByText(sourceTitle, { exact: true }) });
+    await activeSourceRow
+      .getByRole("button", { name: "停用", exact: true })
+      .click();
+    await expect(
+      sourceRow.getByRole("button", {
+        name: "重新启用",
+        exact: true,
+      }),
+    ).toBeVisible();
+  }
+}

@@ -24,6 +24,46 @@ const requestAnalysisFixtures = Buffer.from(JSON.stringify({
       },
     ],
   },
+  "你们提供什么服务，工作日多久响应？": {
+    language: "zh",
+    interactionType: "factual",
+    conversationalIntent: null,
+    factualRequests: [
+      {
+        originalText: "你们提供什么服务",
+        normalizedQuestion: "你们提供什么服务",
+        completeness: "complete",
+        missingInformation: [],
+      },
+      {
+        originalText: "工作日多久响应？",
+        normalizedQuestion: "工作日多久响应？",
+        completeness: "complete",
+        missingInformation: [],
+      },
+    ],
+  },
+  "PUBLIC-SERVICE-MAIN-CLOSURE 你们提供什么服务，工作日多久响应？": {
+    language: "zh",
+    interactionType: "factual",
+    conversationalIntent: null,
+    factualRequests: [
+      {
+        originalText: "你们提供什么服务",
+        normalizedQuestion:
+          "PUBLIC-SERVICE-MAIN-CLOSURE 你们提供什么服务",
+        completeness: "complete",
+        missingInformation: [],
+      },
+      {
+        originalText: "工作日多久响应？",
+        normalizedQuestion:
+          "PUBLIC-SERVICE-MAIN-CLOSURE 工作日多久响应？",
+        completeness: "complete",
+        missingInformation: [],
+      },
+    ],
+  },
 })).toString("base64");
 
 export default defineConfig({

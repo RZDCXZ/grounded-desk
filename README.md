@@ -67,6 +67,16 @@ Supabase CLI 已固定为项目开发依赖，不需要全局安装。
 pnpm release:local
 ```
 
+正式上线时先提交待发布代码，并让五项发布证据绑定同一个 40 位 Git SHA：
+
+```bash
+export RELEASE_EVIDENCE_DIR=.release-evidence
+export RELEASE_SOURCE_REVISION=<40-character-git-sha>
+pnpm release:local
+```
+
+`.release-evidence/` 已被 Git 忽略。未设置该目录时命令只执行门槛，不写发布证据。
+
 `pnpm test` 是同一门槛的短别名。命令按顺序完成：
 
 1. TypeScript 类型检查与 ESLint。
@@ -90,7 +100,10 @@ pnpm release:local
 | 浏览器全集 | `pnpm test:e2e` | 是 | 否 |
 | 已重建数据库上的浏览器全集 | `pnpm test:e2e:browser` | 否 | 否 |
 | 完整本地门槛 | `pnpm release:local` | 是 | 否 |
-| 按需真实 AI 冒烟 | `pnpm smoke:ai` | 否 | 是 |
+| 按需真实 AI 完整链路冒烟 | `pnpm smoke:ai` | 否 | 是 |
+| Supabase Cloud 发布预检 | `pnpm release:cloud:preflight` | 否 | 否 |
+| Supabase Cloud 发布 | `pnpm release:cloud` | 否 | 否 |
+| 云端公开体验冒烟 | `pnpm smoke:cloud` | 否 | 是 |
 
 运行单个数据库验收文件：
 
@@ -146,17 +159,19 @@ pnpm eval:retrieval -- --json
 
 调整三项检索配置时应比较整组摘要，不为单个问题添加特例。离线评测使用固定候选与供应商结果，不调用真实模型，也不消耗额度。
 
-真实 AI 冒烟只检查当前 DeepSeek 回答与 SiliconFlow 向量、重排连接，不代替确定性发布门槛。先在 `.env.local` 填写两个 API Key，并在确认会产生真实费用后显式开启：
+真实 AI 冒烟使用脚本内两项知识内容，不写数据库；它先用 SiliconFlow 生成知识与问题向量，再执行候选召回和 Rerank，并用 DeepSeek 完成证据覆盖与有据回答。命令必须同时通过一个引用预期知识来源的有据回答、一个不生成正文或引用的可靠拒答，以及一次携带近期会话但重新检索的追问。它不代替确定性发布门槛。
+
+先在 `.env.local` 填写两个 API Key，并在确认会产生真实费用后显式开启：
 
 ```bash
 RUN_LIVE_AI_SMOKE=true pnpm smoke:ai
 ```
 
-没有显式开关时命令会在任何供应商请求前失败；`pnpm test` 和 `pnpm release:local` 永远不会调用它。
+没有显式开关时命令会在任何供应商请求前失败。显式开启但缺少任一模型密钥时，命令输出“已跳过”并以零状态结束，不输出“通过”；发布记录会拒绝 `skipped` 证据。供应商调用失败时输出阶段、provider、model、errorType 和 traceId，不打印 API Key。`pnpm test` 和 `pnpm release:local` 永远不会调用真实模型。
 
 ## 配置边界
 
-`.env.example` 明确区分两类配置：
+`.env.example` 用于本地环境，`.env.production.example` 是维护者本机执行 Cloud 发布与冒烟的无密钥模板。两者明确区分两类配置：
 
 - `NEXT_PUBLIC_SUPABASE_URL` 与 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 可以进入浏览器包；数据库 RLS 是最终授权边界。
 - `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY`、`ADMIN_EMAIL`、`APP_URL` 和 `EMBED_APP_URL` 仅供服务端使用，禁止添加 `NEXT_PUBLIC_` 前缀；生产环境的 `EMBED_APP_URL` 必须使用与 `APP_URL` 不同的来源，以隔离 iframe 与宿主脚本。
@@ -164,19 +179,81 @@ RUN_LIVE_AI_SMOKE=true pnpm smoke:ai
 - `PUBLIC_DAILY_MESSAGE_BUDGET` 控制公开助手每天最多接受的 AI 请求数；不调用 AI 供应商的受控回应不占用该预算，达到上限后事实咨询不再调用模型并保留人工联系入口。
 - `PUBLIC_CONVERSATION_CONTEXT_MESSAGES` 控制追问最多携带的近期消息数，取值范围为 `6`–`20`；至少保留两轮澄清所需的访客消息与助手结果。历史消息只用于理解追问，每个事实性问题仍会重新检索知识来源。
 
-本地环境使用 `supabase/config.toml`、固定本地端口和演示种子。云端环境只共享迁移与应用代码，不应上传 `supabase/seed.sql` 中的演示身份或复制本地业务数据；云端密钥必须在部署平台单独配置。
+本地环境使用 `supabase/config.toml`、固定本地端口和演示种子。云端使用 `supabase/migrations/` 与 `supabase/config.production.toml`；发布命令把生产配置渲染到临时目录后运行 `config push`，不会覆盖本地配置。`supabase/seed.sql` 永不上传；`scripts/bootstrap-cloud.ts` 只幂等创建 ADMIN_EMAIL 对应的 Auth 用户、组织成员关系和一个草稿助手，不创建知识来源、会话或其他测试业务数据。
 
 ## 本地门槛通过后连接云端
 
-只有最近一次 `pnpm release:local` 完整通过后，才执行以下步骤：
+### 1. 准备同一版本的本地与真实 AI 证据
 
-1. 创建空的 Supabase Cloud 项目，使用 `pnpm exec supabase link --project-ref <project-ref>` 连接；先运行 `pnpm exec supabase db push --dry-run` 核对迁移，再运行 `pnpm exec supabase db push`。不要添加 `--include-seed`。
-2. 在 Supabase Auth 中把生产主站和独立嵌入来源的 `/auth/confirm` 加入允许的重定向地址，并保持种子管理员不进入云端。
-3. 在 Vercel 从 Git 仓库导入 Next.js 项目；分别为 Preview 与 Production 配置 `.env.example` 中的公开和服务端变量。密钥使用各环境自己的 Supabase 与 AI 供应商值。
-4. 为 `APP_URL` 配置后台/公开页面来源，为 `EMBED_APP_URL` 配置不同来源的嵌入页面部署；两个来源使用同一套迁移后的云端数据，但不能共享浏览器来源。
-5. 在 Vercel 创建生产部署前重新核对 `ALLOW_PRIVATE_WEB_SOURCES` 未配置、确定性供应商未启用，并在 Supabase 确认 `grounded-desk-daily-retention` 定时任务有效。
+提交待发布代码，记录其完整 Git SHA，然后执行：
 
-Supabase CLI 与 Vercel Git 部署的后续操作分别参考 [Supabase CLI 文档](https://supabase.com/docs/guides/local-development/cli/getting-started) 和 [Vercel Git 部署文档](https://vercel.com/docs/deployments/git)。
+```bash
+export RELEASE_EVIDENCE_DIR=.release-evidence
+export RELEASE_SOURCE_REVISION=<40-character-git-sha>
+pnpm release:local
+RUN_LIVE_AI_SMOKE=true pnpm smoke:ai
+```
+
+两个命令必须都通过。缺少模型密钥产生的 `skipped` 证据不能进入发布记录。
+
+### 2. 创建并发布 Supabase Cloud
+
+创建空项目后，把 `.env.production.example` 复制为被 Git 忽略的 `.env.production.local` 并填入真实值。新项目应使用 `sb_publishable_…` 与 `sb_secret_…`；secret key 只在维护者本机发布命令和 Vercel 服务端使用。
+
+Supabase 新 Free 项目如需推送自定义 Magic Link 模板，必须先配置自定义 SMTP，或使用允许模板自定义的计划。完成后运行：
+
+```bash
+pnpm release:cloud:preflight
+pnpm release:cloud
+```
+
+`release:cloud` 固定执行预检、`supabase link`、`db push --dry-run`、`db push`、临时生产配置 `config push` 和必要初始化；命令中没有 `--include-seed`。随后在 Supabase 确认：
+
+- 迁移历史与仓库一致，`grounded-desk-daily-retention` 定时任务有效；
+- Auth Site URL 与两个精确 `/auth/confirm` 重定向来自生产配置；
+- 只有配置的管理员、组织、成员关系和草稿助手被初始化；知识来源与会话为空。
+
+### 3. 配置 Vercel Production
+
+从同一 Git SHA 导入 Vercel 项目。为同一 Production 部署绑定两个不同 HTTPS 来源：`APP_URL` 用于后台、公开页和 embed.js，`EMBED_APP_URL` 用于 iframe 页面。每次环境变量变更后必须重新部署，因为旧 deployment 不会自动获得新值。
+
+只把以下两项作为可公开变量：
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+
+`SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY` 与 `SILICONFLOW_API_KEY` 应在 Vercel 的 Preview/Production 分别保存为 Sensitive；`ADMIN_EMAIL`、`APP_URL`、`EMBED_APP_URL` 和其余检索/预算配置也不加 `NEXT_PUBLIC_`。不要配置 `ALLOW_PRIVATE_WEB_SOURCES`，不要启用 `DETERMINISTIC_AI` 或 `DETERMINISTIC_EMBEDDINGS`。
+
+生产部署为 READY 且主域返回成功后，用 Vercel 提供的 deployment ID、project ID 和 URL 生成部署证据：
+
+```bash
+VERCEL_DEPLOYMENT_URL=https://groundeddesk.example.com \
+VERCEL_DEPLOYMENT_ID=dpl_replace_me \
+VERCEL_PROJECT_ID=prj_replace_me \
+pnpm release:record:vercel
+```
+
+### 4. 维护知识并执行云端公开体验冒烟
+
+使用生产 Magic Link 登录，添加真实、公开且可引用的知识来源，等待可用后预览并发布助手。在 `.env.production.local` 填写 `CLOUD_SMOKE_QUESTION` 与 `CLOUD_SMOKE_EXPECTED_SOURCE_TITLE`，再运行：
+
+```bash
+pnpm smoke:cloud
+```
+
+命令会在公开聊天页和真实 iframe 嵌入入口各完成一次有据回答并核对引用，然后短暂把助手设为 offline，确认公开页与 embed.js 均返回 404，并在 `finally` 中恢复 published。应在低流量窗口运行；若进程被强制终止，立即到后台确认助手已重新发布。
+
+### 5. 生成可追溯发布记录
+
+五项证据全部来自同一个 Git SHA 后运行：
+
+```bash
+pnpm release:record
+```
+
+命令要求本地门槛、真实 AI、Supabase Cloud、Vercel Production 和云端公开体验全部为 `passed`，随后在 `docs/releases/` 生成 Markdown 记录。不同源码版本、失败或跳过结果都会阻止记录生成。
+
+相关官方资料：[Supabase 数据库迁移](https://supabase.com/docs/guides/deployment/database-migrations)、[Supabase 配置推送](https://supabase.com/docs/reference/cli/supabase-config-push)、[Supabase API Keys](https://supabase.com/docs/guides/getting-started/api-keys)、[Vercel 环境变量](https://vercel.com/docs/environment-variables)、[Vercel Production 部署](https://vercel.com/docs/cli/deploy)。
 
 ## 数据保留
 
