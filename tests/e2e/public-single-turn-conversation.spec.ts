@@ -670,12 +670,17 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
       }
     });
   expect(hostCanReadIframeDocument).toBe(false);
-  await embeddedConversation
-    .getByLabel("咨询问题")
-    .fill(`${sourceMarker} 嵌入入口提供什么服务？`);
-  await embeddedConversation
-    .getByRole("button", { name: "发送问题" })
-    .click();
+  const embeddedQuestion = embeddedConversation.getByLabel("咨询问题");
+  const embeddedSendButton = embeddedConversation.getByRole("button", {
+    name: "发送问题",
+  });
+  await expect(async () => {
+    await embeddedQuestion.fill(
+      `${sourceMarker} 嵌入入口提供什么服务？`,
+    );
+    await expect(embeddedSendButton).toBeEnabled({ timeout: 500 });
+  }).toPass({ timeout: 5_000 });
+  await embeddedSendButton.click();
   await expect(
     embeddedConversation.getByText(
       /我们提供知识整理、来源核查和有据回答配置服务/,
