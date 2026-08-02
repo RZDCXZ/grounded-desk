@@ -1,8 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import {
   releaseChecks,
+  readReleaseEvidence,
   type ReleaseCheck,
   type ReleaseEvidence,
 } from "./release-evidence.ts";
@@ -35,6 +36,8 @@ const summaryFields: Record<ReleaseCheck, Record<string, string>> = {
   },
   "vercel-production-deploy": {
     deploymentUrl: "生产 URL",
+    deploymentId: "Vercel deployment ID",
+    projectId: "Vercel project ID",
     environment: "Vercel 环境",
   },
   "cloud-smoke": {
@@ -51,7 +54,9 @@ try {
     throw new Error("缺少 RELEASE_EVIDENCE_DIR");
   }
   const evidence = await Promise.all(
-    releaseChecks.map((check) => readEvidence(evidenceDirectory, check)),
+    releaseChecks.map((check) =>
+      readReleaseEvidence(evidenceDirectory, check)
+    ),
   );
   const sourceRevisions = new Set(
     evidence.map(({ sourceRevision }) => sourceRevision),
@@ -96,42 +101,6 @@ try {
   const message = error instanceof Error ? error.message : "未知错误";
   process.stderr.write(`发布记录生成失败：${message}\n`);
   process.exitCode = 1;
-}
-
-async function readEvidence(directory: string, expectedCheck: ReleaseCheck) {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(
-      await readFile(resolve(directory, `${expectedCheck}.json`), "utf8"),
-    );
-  } catch (error) {
-    throw new Error(`无法读取 ${expectedCheck} 发布证据`, { cause: error });
-  }
-  if (!isReleaseEvidence(parsed) || parsed.check !== expectedCheck) {
-    throw new Error(`${expectedCheck} 发布证据格式无效`);
-  }
-  return parsed;
-}
-
-function isReleaseEvidence(value: unknown): value is ReleaseEvidence {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const candidate = value as Partial<ReleaseEvidence>;
-  return candidate.schemaVersion === 1 &&
-    releaseChecks.some((check) => check === candidate.check) &&
-    ["passed", "failed", "skipped"].includes(candidate.status ?? "") &&
-    typeof candidate.sourceRevision === "string" &&
-    /^[0-9a-f]{40}$/u.test(candidate.sourceRevision) &&
-    typeof candidate.completedAt === "string" &&
-    !Number.isNaN(Date.parse(candidate.completedAt)) &&
-    typeof candidate.summary === "object" &&
-    candidate.summary !== null &&
-    Object.values(candidate.summary).every((item) =>
-      typeof item === "string" ||
-      typeof item === "boolean" ||
-      (typeof item === "number" && Number.isFinite(item))
-    );
 }
 
 function renderEvidence(evidence: ReleaseEvidence) {

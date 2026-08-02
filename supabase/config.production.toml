@@ -16,4 +16,4 @@ enable_confirmations = false
 
 [auth.email.template.magic_link]
 subject = "登录 GroundedDesk"
-content_path = "./templates/magic-link.html"
+content_path = "./supabase/templates/magic-link.html"

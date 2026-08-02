@@ -50,7 +50,7 @@ const steps = [
 try {
   for (const step of steps) {
     announce(step.label, step.display);
-    if (!dryRun) {
+    if (!dryRun || step === steps[0]) {
       await runCommand(step.command);
     }
   }

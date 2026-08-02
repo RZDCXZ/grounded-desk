@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export const releaseChecks = [
@@ -35,7 +35,7 @@ export async function writeReleaseEvidence(
     schemaVersion: 1,
     check,
     status,
-    sourceRevision: readSourceRevision(),
+    sourceRevision: readReleaseSourceRevision(),
     completedAt: new Date().toISOString(),
     summary,
   };
@@ -47,8 +47,10 @@ export async function writeReleaseEvidence(
   );
 }
 
-function readSourceRevision() {
-  const configuredRevision = process.env.RELEASE_SOURCE_REVISION;
+export function readReleaseSourceRevision(
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  const configuredRevision = environment.RELEASE_SOURCE_REVISION;
   if (configuredRevision) {
     if (!/^[0-9a-f]{40}$/u.test(configuredRevision)) {
       throw new Error("RELEASE_SOURCE_REVISION 必须是 40 位 Git SHA");
@@ -64,4 +66,43 @@ function readSourceRevision() {
     throw new Error("无法确定发布证据对应的 Git revision");
   }
   return revision;
+}
+
+export async function readReleaseEvidence(
+  directory: string,
+  expectedCheck: ReleaseCheck,
+) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      await readFile(resolve(directory, `${expectedCheck}.json`), "utf8"),
+    );
+  } catch (error) {
+    throw new Error(`无法读取 ${expectedCheck} 发布证据`, { cause: error });
+  }
+  if (!isReleaseEvidence(parsed) || parsed.check !== expectedCheck) {
+    throw new Error(`${expectedCheck} 发布证据格式无效`);
+  }
+  return parsed;
+}
+
+export function isReleaseEvidence(value: unknown): value is ReleaseEvidence {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<ReleaseEvidence>;
+  return candidate.schemaVersion === 1 &&
+    releaseChecks.some((check) => check === candidate.check) &&
+    ["passed", "failed", "skipped"].includes(candidate.status ?? "") &&
+    typeof candidate.sourceRevision === "string" &&
+    /^[0-9a-f]{40}$/u.test(candidate.sourceRevision) &&
+    typeof candidate.completedAt === "string" &&
+    !Number.isNaN(Date.parse(candidate.completedAt)) &&
+    typeof candidate.summary === "object" &&
+    candidate.summary !== null &&
+    Object.values(candidate.summary).every((item) =>
+      typeof item === "string" ||
+      typeof item === "boolean" ||
+      (typeof item === "number" && Number.isFinite(item))
+    );
 }

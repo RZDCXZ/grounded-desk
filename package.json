@@ -33,7 +33,7 @@
     "smoke:ai": "node --env-file-if-exists=.env.local --conditions=react-server scripts/smoke-live-ai.ts",
     "smoke:cloud": "node --env-file-if-exists=.env.production.local node_modules/@playwright/test/cli.js test --config=playwright.cloud.config.ts",
     "release:record": "node scripts/create-release-record.ts",
-    "release:record:vercel": "node scripts/record-vercel-deployment.ts",
+    "release:record:vercel": "node --env-file-if-exists=.env.production.local scripts/record-vercel-deployment.ts",
     "test": "pnpm release:local"
   },
   "dependencies": {

@@ -1,5 +1,11 @@
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
+
+import {
+  readReleaseEvidence,
+  readReleaseSourceRevision,
+  type ReleaseCheck,
+} from "./release-evidence.ts";
 
 const projectDirectory = resolve(import.meta.dirname, "..");
 
@@ -8,6 +14,7 @@ try {
   process.stdout.write([
     "GroundedDesk 云端发布预检通过",
     `版本化迁移：${result.migrationCount} 个`,
+    "本地与真实 AI 证据：PASS",
     "生产配置：supabase/config.production.toml",
     "必要初始化：scripts/bootstrap-cloud.ts（仅管理员、组织成员关系和草稿助手）",
     "本地种子：EXCLUDED (supabase/seed.sql)",
@@ -109,6 +116,8 @@ async function checkCloudRelease(environment: NodeJS.ProcessEnv) {
     errors.push("ADMIN_EMAIL 不是有效邮箱地址");
   }
 
+  await validatePrerequisiteEvidence(environment, errors);
+
   const migrationDirectory = resolve(
     projectDirectory,
     "supabase/migrations",
@@ -122,6 +131,7 @@ async function checkCloudRelease(environment: NodeJS.ProcessEnv) {
   await requireFile("supabase/config.production.toml", errors);
   await requireFile("supabase/templates/magic-link.html", errors);
   await requireFile("scripts/bootstrap-cloud.ts", errors);
+  await validateProductionTemplatePath(errors);
 
   if (errors.length > 0) {
     throw new Error(errors.join("；"));
@@ -191,5 +201,61 @@ async function requireFile(relativePath: string, errors: string[]) {
     }
   } catch {
     errors.push(`缺少发布资产 ${relativePath}`);
+  }
+}
+
+async function validatePrerequisiteEvidence(
+  environment: NodeJS.ProcessEnv,
+  errors: string[],
+) {
+  const directory = environment.RELEASE_EVIDENCE_DIR?.trim();
+  if (!directory) {
+    errors.push("缺少 RELEASE_EVIDENCE_DIR");
+    return;
+  }
+
+  let sourceRevision: string;
+  try {
+    sourceRevision = readReleaseSourceRevision(environment);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "无法确定源码版本");
+    return;
+  }
+
+  const prerequisiteChecks = [
+    "local-gate",
+    "live-ai-smoke",
+  ] as const satisfies readonly ReleaseCheck[];
+  for (const check of prerequisiteChecks) {
+    try {
+      const evidence = await readReleaseEvidence(directory, check);
+      if (evidence.status !== "passed") {
+        errors.push(`${check} 发布证据必须为 passed`);
+      }
+      if (evidence.sourceRevision !== sourceRevision) {
+        errors.push(`${check} 发布证据源码版本与待发布版本不一致`);
+      }
+    } catch (error) {
+      errors.push(
+        error instanceof Error ? error.message : `${check} 发布证据无效`,
+      );
+    }
+  }
+}
+
+async function validateProductionTemplatePath(errors: string[]) {
+  try {
+    const configuration = await readFile(
+      resolve(projectDirectory, "supabase/config.production.toml"),
+      "utf8",
+    );
+    if (
+      !/^content_path = "\.\/supabase\/templates\/magic-link\.html"$/mu
+        .test(configuration)
+    ) {
+      errors.push("生产 Magic Link 模板路径必须相对于 Supabase workdir");
+    }
+  } catch {
+    // requireFile 会提供缺失资产的统一诊断。
   }
 }

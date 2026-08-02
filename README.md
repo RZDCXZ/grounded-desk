@@ -224,12 +224,9 @@ pnpm release:cloud
 
 `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY` 与 `SILICONFLOW_API_KEY` 应在 Vercel 的 Preview/Production 分别保存为 Sensitive；`ADMIN_EMAIL`、`APP_URL`、`EMBED_APP_URL` 和其余检索/预算配置也不加 `NEXT_PUBLIC_`。不要配置 `ALLOW_PRIVATE_WEB_SOURCES`，不要启用 `DETERMINISTIC_AI` 或 `DETERMINISTIC_EMBEDDINGS`。
 
-生产部署为 READY 且主域返回成功后，用 Vercel 提供的 deployment ID、project ID 和 URL 生成部署证据：
+生产部署为 READY 且主域返回成功后，在 `.env.production.local` 填入 Vercel access token、team ID、deployment ID、project ID 和 URL，再生成部署证据。命令会通过 Vercel API 核对 deployment、project、Production 状态、绑定域名和 Git SHA，然后访问生产 URL：
 
 ```bash
-VERCEL_DEPLOYMENT_URL=https://groundeddesk.example.com \
-VERCEL_DEPLOYMENT_ID=dpl_replace_me \
-VERCEL_PROJECT_ID=prj_replace_me \
 pnpm release:record:vercel
 ```
 
@@ -253,7 +250,7 @@ pnpm release:record
 
 命令要求本地门槛、真实 AI、Supabase Cloud、Vercel Production 和云端公开体验全部为 `passed`，随后在 `docs/releases/` 生成 Markdown 记录。不同源码版本、失败或跳过结果都会阻止记录生成。
 
-相关官方资料：[Supabase 数据库迁移](https://supabase.com/docs/guides/deployment/database-migrations)、[Supabase 配置推送](https://supabase.com/docs/reference/cli/supabase-config-push)、[Supabase API Keys](https://supabase.com/docs/guides/getting-started/api-keys)、[Vercel 环境变量](https://vercel.com/docs/environment-variables)、[Vercel Production 部署](https://vercel.com/docs/cli/deploy)。
+相关官方资料：[Supabase 数据库迁移](https://supabase.com/docs/guides/deployment/database-migrations)、[Supabase 配置推送](https://supabase.com/docs/reference/cli/supabase-config-push)、[Supabase API Keys](https://supabase.com/docs/guides/getting-started/api-keys)、[Vercel 环境变量](https://vercel.com/docs/environment-variables)、[Vercel Production 部署](https://vercel.com/docs/cli/deploy)、[Vercel REST API](https://vercel.com/docs/rest-api)。
 
 ## 数据保留
 
