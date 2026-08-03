@@ -87,6 +87,26 @@ pnpm release:local
 
 任一步失败都会以非零状态停止，不能进入云端发布。普通门槛显式使用确定性向量、重排和回答提供器，不需要 `DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY` 或真实模型额度。
 
+### 持续集成
+
+GitHub Actions 会在目标分支为 `main` 的所有 Pull Request（包括草稿）以及每次推送到 `main` 时运行同一套 `pnpm release:local`。同一 Pull Request 的新提交会取消尚未完成的旧运行；`main` 上的运行不会互相取消。工作流不使用路径过滤，因此文档、应用、数据库和测试的任何变更都会经过完整门槛。
+
+CI 使用标准 GitHub 托管的 `ubuntu-24.04` runner、Node.js 24 和仓库固定的 pnpm 11.13.0。它不使用大型或收费 runner，不启用依赖缓存，不上传测试 artifact，只保留 GitHub Actions 日志。外部 Actions 固定到完整 commit SHA，工作流令牌只有读取仓库内容的权限。
+
+工作流只启动 runner 内的临时 Supabase 实例。`pnpm ci:preflight` 会拒绝真实 AI 密钥、Supabase Cloud 项目配置、预置的 Supabase secret 和 Vercel 凭据，再从当前本地 Supabase CLI 导出测试所需的 URL、publishable key 与 secret key；API URL 不是 `http://127.0.0.1:54321` 时立即失败。`RUN_LIVE_AI_SMOKE` 必须保持关闭，因此 CI 只使用确定性提供器和离线评测。
+
+GitHub Actions 不执行 Supabase Cloud 发布，也不调用 Vercel 部署命令。Vercel Preview 与 Production 继续由现有 Vercel Git 集成负责。
+
+### Vercel Preview 认证隔离
+
+所有 Pull Request 的 Vercel Preview 暂时共用独立的 `GroundedDesk Preview` Supabase 项目，但不共用固定的应用地址。Vercel 项目必须开启 **Automatically expose System Environment Variables**，并且 Preview 范围不得配置 `APP_URL`。服务端仅在 `VERCEL=1`、`VERCEL_ENV=preview`、`VERCEL_TARGET_ENV=preview` 同时成立时接受 `VERCEL_BRANCH_URL`，且该值必须是没有协议、路径、端口或凭据的单标签 `*.vercel.app` 主机名；校验失败时直接中止，不会使用请求的 `Host`、`X-Forwarded-Host` 或固定分支地址作为后备。
+
+Magic Link 请求会显式传入 `https://<VERCEL_BRANCH_URL>/auth/confirm`。`GroundedDesk Preview` 的 Auth URL Configuration 使用 `http://127.0.0.1:3000` 作为不会落到 Production 的失败保护 Site URL，Additional Redirect URLs 只保留 `https://grounded-desk-git-*-rzdcxzs-projects.vercel.app/auth/confirm`。本地开发仍使用本地 Supabase 的两个精确 `/auth/confirm` 地址，不连接这个云端 Preview 项目。
+
+通配符只覆盖当前 Vercel 项目在当前团队下的 Git 分支别名，并固定到 `/auth/confirm`；不要使用 `https://**.vercel.app/**` 之类的全局通配。项目名或团队 slug 变化时，先收紧并更新 Preview Supabase 白名单。Production 的精确 Auth URL、Production Supabase 和 `APP_URL` 不随 Preview 配置变化。
+
+验证 Preview 时不得主动发送 Magic Link。使用服务测试验证回跳 URL，再访问 Preview 登录页并检查运行时无 500 即可；真实邮件只由维护者按需发起。
+
 ### 分层运行
 
 | 检查 | 命令 | 是否重置数据库 | 是否消耗真实模型额度 |
@@ -173,7 +193,7 @@ RUN_LIVE_AI_SMOKE=true pnpm smoke:ai
 `.env.example` 用于本地环境，`.env.production.example` 是维护者本机执行 Cloud 发布与冒烟的无密钥模板。两者明确区分两类配置：
 
 - `NEXT_PUBLIC_SUPABASE_URL` 与 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 可以进入浏览器包；数据库 RLS 是最终授权边界。
-- `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY`、`ADMIN_EMAIL`、`APP_URL` 和 `EMBED_APP_URL` 仅供服务端使用，禁止添加 `NEXT_PUBLIC_` 前缀；生产环境的 `EMBED_APP_URL` 必须使用与 `APP_URL` 不同的来源，以隔离 iframe 与宿主脚本。
+- `SUPABASE_SECRET_KEY`、`DEEPSEEK_API_KEY`、`SILICONFLOW_API_KEY`、`ADMIN_EMAIL`、`APP_URL` 和 `EMBED_APP_URL` 仅供服务端使用，禁止添加 `NEXT_PUBLIC_` 前缀；`APP_URL` 只由本地和 Production 显式配置，Vercel Preview 从经过校验的系统环境变量取得分支地址；生产环境的 `EMBED_APP_URL` 必须使用与 `APP_URL` 不同的来源，以隔离 iframe 与宿主脚本。
 - `RETRIEVAL_CANDIDATE_LIMIT`、`RERANK_EVIDENCE_LIMIT` 与 `RERANK_NOISE_FLOOR` 是统一的服务端检索配置，由整组离线评测校准，不向管理员界面开放；噪声下限不能直接决定可靠拒答。
 - `PUBLIC_DAILY_MESSAGE_BUDGET` 控制公开助手每天最多接受的 AI 请求数；不调用 AI 供应商的受控回应不占用该预算，达到上限后事实咨询不再调用模型并保留人工联系入口。
 - `PUBLIC_CONVERSATION_CONTEXT_MESSAGES` 控制追问最多携带的近期消息数，取值范围为 `6`–`20`；至少保留两轮澄清所需的访客消息与助手结果。历史消息只用于理解追问，每个事实性问题仍会重新检索知识来源。

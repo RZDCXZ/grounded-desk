@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 import { getAdminEmail } from "@/lib/env";
+import { getAuthConfirmationUrl } from "@/lib/server-config";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 
 export async function POST(request: Request) {
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
+      emailRedirectTo: getAuthConfirmationUrl(),
       shouldCreateUser: false,
     },
   });

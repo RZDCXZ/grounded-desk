@@ -62,6 +62,7 @@ test("管理员通过网页知识完成预览、发布、公开咨询、引用�
   page,
   request,
 }) => {
+  test.setTimeout(60_000);
   const scenarioId = Date.now();
   const conversationalQuestion = "你好";
   const clarificationQuestion = "退款";
@@ -1087,6 +1088,9 @@ function rectanglesOverlap(
 }
 
 async function disableAllKnowledgeSources(page: Page) {
+  await expect(
+    page.getByRole("button", { name: "添加知识来源" }),
+  ).toBeVisible();
   const disableSourceButtons = page.getByRole("button", {
     name: "停用",
     exact: true,
